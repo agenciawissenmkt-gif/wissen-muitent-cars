@@ -12,15 +12,15 @@ Uma origem só: sem CORS, e o callback do Google fica no mesmo domínio do app.
 
 ## 1. Criar o projeto
 
-Vercel → **Add New › Project** → importe `agenciawissenmkt-gif/muscleform`.
+Vercel → **Add New › Project** → importe `agenciawissenmkt-gif/wissen-muitent-cars`.
 
 A Vercel detecta Vite sozinha; o `vercel.json` já fixa build (`npm run build`),
-saída (`dist`) e as rotas. Não precisa mexer em nada nessa tela.
+saída (`dist`) e as rotas. Não precisa mexer em nada nessa tela — nem na branch,
+porque este repositório tem só o painel e a `main` já é a versão certa.
 
-> **Branch de produção.** O trabalho está em `claude/wissen-cars-saas-bxs31g`. Ou você
-> mescla essa branch na `main`, ou aponta a produção para ela em
-> **Settings › Git › Production Branch**. Sem isso a Vercel publica a `main`, que
-> ainda tem o app antigo.
+> Este repositório existe justamente para não misturar projetos: o `muscleform`
+> hospeda três apps em branches diferentes e está vinculado a outro projeto da
+> Vercel, então importá-lo publicaria a coisa errada.
 
 ## 2. Variáveis de ambiente
 
