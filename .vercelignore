@@ -1,0 +1,13 @@
+# Segredos nunca sobem para a Vercel — as variáveis vivem em
+# Settings › Environment Variables.
+.env
+.env.*
+server/.env
+server/.env.*
+
+# Artefatos e material de apoio
+node_modules
+dist
+docs
+supabase
+scripts/harness
