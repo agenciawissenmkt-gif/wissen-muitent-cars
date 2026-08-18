@@ -2,6 +2,7 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import { db, HttpError, upsertChannel } from '../lib/db.js'
 import { requireTenant, route } from '../lib/auth.js'
+import { ensureAgentWebhook } from '../lib/chatwoot-account.js'
 
 const router = Router()
 
@@ -64,6 +65,51 @@ function safeJson(text) {
   } catch {
     return { message: text.slice(0, 200) }
   }
+}
+
+/**
+ * O token de administrador da conta é o que destrava tudo que vem depois: criar
+ * a inbox pela Evolution e registrar o webhook do agente. Antes ele só era
+ * capturado se algum vendedor tivesse papel `administrator` — numa loja com
+ * apenas vendedores, ficava vazio e a implantação seguia quebrada em silêncio.
+ * Agora criamos um usuário de serviço próprio da loja e guardamos o token dele.
+ */
+async function ensureAdminToken(accountId, tenant, existingToken) {
+  if (existingToken) return existingToken
+
+  const domain = process.env.CHATWOOT_BOT_EMAIL_DOMAIN || 'wissencars.app'
+
+  for (const sufixo of ['', `-${crypto.randomBytes(3).toString('hex')}`]) {
+    try {
+      const created = await platform('users', {
+        method: 'POST',
+        body: {
+          name: `Wissen Cars (${tenant.nome})`,
+          email: `wissen-bot+${tenant.slug}${sufixo}@${domain}`,
+          password: crypto.randomBytes(18).toString('base64url'),
+          confirmed: true,
+        },
+      })
+
+      await platform(`accounts/${accountId}/account_users`, {
+        method: 'POST',
+        body: { user_id: created.id, role: 'administrator' },
+      }).catch((error) => {
+        if (error.chatwootStatus !== 422) throw error
+      })
+
+      if (created.access_token) return created.access_token
+    } catch (error) {
+      // 422 = e-mail já usado; tentamos de novo com sufixo aleatório
+      if (error.chatwootStatus !== 422) throw error
+    }
+  }
+
+  throw new HttpError(
+    502,
+    'Não foi possível gerar o token de administrador da central.',
+    'Crie um agente administrador no Chatwoot e informe o token dele.',
+  )
 }
 
 /**
@@ -142,11 +188,15 @@ router.post(
       users.push({ email: person.email, chatwoot_user_id: userId, role: person.role, invited })
     }
 
+    adminToken = await ensureAdminToken(accountId, tenant, adminToken)
+
     await upsertChannel(tenant.id, { chatwoot_account_id: accountId, ativo: true })
 
     // chatwoot_base_url já pode estar apontando para o host interno do Docker
     // (ex.: http://wissen_chatwoot:3000), que é o endereço certo para o n8n e a
     // Evolution usarem. Só preenchemos quando ainda está vazio.
+    // Gravamos ANTES de registrar o webhook: se o webhook falhar, o token já
+    // está salvo e a etapa pode ser repetida sem criar outro usuário.
     const settingsPatch = { tenant_id: tenant.id }
     if (!settings?.chatwoot_base_url) settingsPatch.chatwoot_base_url = baseUrl
     if (adminToken) settingsPatch.chatwoot_token = adminToken
@@ -155,7 +205,10 @@ router.post(
       await db.upsert('tenant_settings', [settingsPatch], 'tenant_id')
     }
 
-    res.json({ account_id: accountId, users })
+    // Sem este webhook o Chatwoot nunca avisa o n8n e a IA não responde.
+    const webhook = await ensureAgentWebhook(accountId, adminToken)
+
+    res.json({ account_id: accountId, users, webhook })
   }),
 )
 
