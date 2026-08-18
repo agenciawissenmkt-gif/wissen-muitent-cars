@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useTenant } from '../../core/tenant'
-import { defaultPrompts } from '../../core/prompts'
+import { buildPrompts } from '../../core/prompts'
 import { maskCnpj, maskPhone, onlyDigits } from '../../core/format'
 import {
   AGENT_HINT,
@@ -39,6 +39,7 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     fechamento: '',
   })
   const [saving, setSaving] = useState(false)
+  const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -73,19 +74,65 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     })
   }, [agents])
 
-  function generatePrompts() {
-    setPrompts(
-      defaultPrompts({
-        ...store,
-        name,
-        offers_consignment: consignment,
-        accepts_trade: trade,
-        works_with_auction: auction,
-        inspection_type: inspection,
-        partner_banks: banks,
-      }),
-    )
-    toast('Prompts sugeridos gerados. Revise o texto antes de salvar.', 'info')
+  /** Os dados do formulário precisam estar no banco: quem monta o prompt é a RPC. */
+  async function persistStoreData() {
+    await updateStore({
+      name: name.trim(),
+      cnpj: onlyDigits(cnpj) || null,
+      phone: onlyDigits(phone) || null,
+      offers_consignment: consignment,
+      accepts_trade: trade,
+      works_with_auction: auction,
+      has_inspection: inspection !== 'nenhum',
+      inspection_type: inspection,
+      partner_banks: banks,
+    })
+
+    if (tenant && tenant.nome !== name.trim()) {
+      await updateTenant({ nome: name.trim() })
+    }
+
+    await updateSettings({
+      horario_atendimento: mode === '24h' ? '24h' : `${start}-${end}`,
+    })
+  }
+
+  /**
+   * Remonta os três prompts: template-base (a essência da Júlia, gravada em
+   * `prompt_templates`) + os dados que o lojista preencheu. Não sobrescreve
+   * nada no banco — só preenche as caixas de texto para revisão.
+   */
+  async function generatePrompts() {
+    if (!name.trim()) {
+      setError('Informe o nome da loja antes de gerar os prompts.')
+      return
+    }
+    if (!tenant?.id) {
+      toast('Salve as regras uma vez antes de gerar os prompts.', 'info')
+      return
+    }
+
+    setGenerating(true)
+    setError(null)
+    try {
+      await persistStoreData()
+      setPrompts(
+        await buildPrompts(tenant.id, {
+          ...store,
+          name,
+          offers_consignment: consignment,
+          accepts_trade: trade,
+          works_with_auction: auction,
+          inspection_type: inspection,
+          partner_banks: banks,
+        }),
+      )
+      toast('Prompts remontados com o texto base + os dados da loja. Revise antes de salvar.', 'info')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Não foi possível gerar os prompts.', 'error')
+    } finally {
+      setGenerating(false)
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -99,25 +146,7 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     setError(null)
 
     try {
-      await updateStore({
-        name: name.trim(),
-        cnpj: onlyDigits(cnpj) || null,
-        phone: onlyDigits(phone) || null,
-        offers_consignment: consignment,
-        accepts_trade: trade,
-        works_with_auction: auction,
-        has_inspection: inspection !== 'nenhum',
-        inspection_type: inspection,
-        partner_banks: banks,
-      })
-
-      if (tenant && tenant.nome !== name.trim()) {
-        await updateTenant({ nome: name.trim() })
-      }
-
-      await updateSettings({
-        horario_atendimento: mode === '24h' ? '24h' : `${start}-${end}`,
-      })
+      await persistStoreData()
 
       // Um prompt por agente — o N8N lê tenant_agents.system_prompt
       for (const type of AGENT_TYPES) {
@@ -273,8 +302,15 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 </h3>
                 <p className="mt-1 text-xs text-ink-500">As três fases da conversa, lidas pelo fluxo do N8N.</p>
               </div>
-              <Button type="button" variant="secondary" size="sm" onClick={generatePrompts} icon={<SparkIcon className="size-4" />}>
-                Gerar sugestão
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={generatePrompts}
+                disabled={generating}
+                icon={<SparkIcon className="size-4" />}
+              >
+                {generating ? 'Gerando…' : 'Gerar sugestão'}
               </Button>
             </div>
 
