@@ -1,4 +1,7 @@
+import { supabase } from './supabase'
 import type { AgentType, Store } from './types'
+
+const AGENT_TYPES: AgentType[] = ['descoberta', 'encantamento', 'fechamento']
 
 /**
  * Prompts sugeridos para as três fases do agente, montados a partir das regras
@@ -49,4 +52,35 @@ Ofereça dois horários concretos e agende na agenda da loja assim que o cliente
 Financiamento é feito com ${banks} — colete nome completo, CPF e valor de entrada para simulação e passe ao vendedor responsável.
 Nunca prometa desconto, aprovação de crédito ou condição que não tenha sido autorizada pela loja: nesses casos, transfira para um vendedor humano.`,
   }
+}
+
+/**
+ * Monta os prompts das três fases a partir do template-base gravado em
+ * `prompt_templates` somado ao que o lojista preencheu no painel.
+ *
+ * A essência da Júlia mora no template e o painel nunca a reescreve: os dados
+ * do painel só preenchem `{{LOJA}}`, `{{ENDERECO_SUFIXO}}` e o bloco
+ * `{{DADOS_DA_LOJA}}`. Campo em branco não apaga nada — a linha correspondente
+ * simplesmente não entra no bloco.
+ *
+ * Se o template ainda não existir no banco, cai no texto curto de
+ * `defaultPrompts`, que é só um ponto de partida.
+ */
+export async function buildPrompts(
+  tenantId: string,
+  store: Partial<Store> & { name?: string },
+): Promise<Record<AgentType, string>> {
+  const out = defaultPrompts(store)
+
+  await Promise.all(
+    AGENT_TYPES.map(async (type) => {
+      const { data, error } = await supabase.rpc('render_agent_prompt', {
+        p_tenant: tenantId,
+        p_agent_type: type,
+      })
+      if (!error && typeof data === 'string' && data.trim()) out[type] = data
+    }),
+  )
+
+  return out
 }
