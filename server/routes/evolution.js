@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { db, HttpError, upsertChannel } from '../lib/db.js'
 import { requireTenant, route } from '../lib/auth.js'
+import { findInboxByName } from '../lib/chatwoot-account.js'
 
 const router = Router()
 
@@ -153,27 +154,39 @@ router.post(
       if (!/already|exists|in use/i.test(error.message)) throw error
     }
 
-    // Liga a instância à central da loja (cria a inbox no Chatwoot)
-    if (channel?.chatwoot_account_id && settings?.chatwoot_base_url && settings?.chatwoot_token) {
+    // Liga a instância à central da loja (cria a inbox no Chatwoot).
+    // A URL aqui é a que a Evolution vai usar para falar com o Chatwoot: o host
+    // interno do Docker quando existir, senão o endereço público.
+    const inboxName = `wissen-${tenant.slug}`
+    const chatwootUrlParaEvolution =
+      settings?.chatwoot_base_url || process.env.CHATWOOT_INTERNAL_URL || process.env.CHATWOOT_BASE_URL || null
+
+    if (channel?.chatwoot_account_id && chatwootUrlParaEvolution && settings?.chatwoot_token) {
       await evolution(config, `chatwoot/set/${name}`, {
         method: 'POST',
         body: {
           enabled: true,
           accountId: String(channel.chatwoot_account_id),
           token: settings.chatwoot_token,
-          url: settings.chatwoot_base_url,
+          url: chatwootUrlParaEvolution,
           signMsg: false,
           reopenConversation: true,
           conversationPending: false,
-          nameInbox: `wissen-${tenant.slug}`,
+          nameInbox: inboxName,
           importContacts: false,
           importMessages: false,
           mergeBrazilContacts: true,
           autoCreate: true,
         },
-      }).catch((error) => {
-        console.warn('[wissen-cars] integração Chatwoot/Evolution falhou:', error.message)
       })
+    } else if (channel?.chatwoot_account_id && !settings?.chatwoot_token) {
+      // Falhar aqui é melhor do que entregar uma loja muda: sem essa ligação as
+      // mensagens do WhatsApp nunca chegam ao Chatwoot nem ao agente.
+      throw new HttpError(
+        400,
+        'A central ainda não tem token de administrador.',
+        'Refaça a etapa 3 (criar central) para gerar o token antes de conectar o WhatsApp.',
+      )
     }
 
     let qrcode = readQrCode(created)
@@ -182,14 +195,26 @@ router.post(
       qrcode = readQrCode(connect)
     }
 
+    // A inbox é criada pela Evolution; sem guardar o id aqui a RPC
+    // tenant_context(account_id, inbox_id) não acha o tenant e o agente ignora
+    // a conversa.
+    let inboxId = channel?.chatwoot_inbox_id ?? null
+    if (channel?.chatwoot_account_id && settings?.chatwoot_token) {
+      const inbox = await findInboxByName(channel.chatwoot_account_id, settings.chatwoot_token, inboxName).catch(
+        () => null,
+      )
+      if (inbox?.id) inboxId = inbox.id
+    }
+
     await upsertChannel(tenant.id, {
       evolution_instance: name,
       whatsapp_number: settings?.bot_phone ?? null,
       chatwoot_account_id: channel?.chatwoot_account_id ?? null,
+      chatwoot_inbox_id: inboxId,
     })
     await db.upsert('tenant_settings', [{ tenant_id: tenant.id, evolution_instance: name }], 'tenant_id')
 
-    res.json({ instance: name, status: 'aguardando_leitura', qrcode })
+    res.json({ instance: name, status: 'aguardando_leitura', qrcode, chatwoot_inbox_id: inboxId })
   }),
 )
 
