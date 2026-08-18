@@ -278,11 +278,6 @@ export function StepRules({ onNext }: { onNext: () => void }) {
               </Button>
             </div>
 
-            <InfoNote tone="amber">
-              Atenção: sua loja já tem prompts extensos gravados. “Gerar sugestão” substitui o texto na tela — nada é
-              salvo até você clicar em “Salvar e continuar”.
-            </InfoNote>
-
             <div className="mt-4 space-y-4">
               {AGENT_TYPES.map((type) => (
                 <Textarea
