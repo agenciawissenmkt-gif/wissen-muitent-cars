@@ -5,6 +5,29 @@ import { findInboxByName } from '../lib/chatwoot-account.js'
 
 const router = Router()
 
+/**
+ * A Evolution valida a URL do Chatwoot com um parser estrito e recusa hostname
+ * com underscore ("url is not valid") — que é justamente o nome do serviço no
+ * Docker (http://wissen_chatwoot:3000). Quando isso acontece, caímos para o
+ * endereço público, que a Evolution alcança do mesmo jeito.
+ */
+function hostnameValidoParaEvolution(url) {
+  try {
+    return !new URL(url).hostname.includes('_')
+  } catch {
+    return false
+  }
+}
+
+function escolheUrlDoChatwoot(settings) {
+  const candidatas = [
+    settings?.chatwoot_base_url,
+    process.env.CHATWOOT_INTERNAL_URL,
+    process.env.CHATWOOT_BASE_URL,
+  ]
+  return candidatas.find((url) => url && hostnameValidoParaEvolution(url)) || null
+}
+
 /** Modo simulação: permite testar a etapa 4 (QR + comemoração) sem Evolution API. */
 const SIMULATE = process.env.WISSEN_SIMULATE === 'true'
 const SIMULATED_CONNECT_MS = 12_000
@@ -138,16 +161,23 @@ router.post(
       return
     }
 
-    // Se a instância já existir a Evolution responde erro — seguimos para o connect.
+    // Criamos SEM pedir QR de propósito. Configurar o Chatwoot logo abaixo
+    // reinicia a instância na Evolution: um QR gerado agora seria de um socket
+    // que morre no restart, e o lojista pareia numa sessão que cai em seguida.
+    // O QR sai só no final, depois de tudo configurado.
+    //
+    // Também não mandamos `number`: com ele a Evolution amarra a instância
+    // àquele telefone e troca para pareamento por código. Qualquer divergência
+    // de formato (o 9 extra do celular, por exemplo) invalida a sessão logo
+    // depois de parear. Com QR puro quem manda é o aparelho que escaneia.
     let created = null
     try {
       created = await evolution(config, 'instance/create', {
         method: 'POST',
         body: {
           instanceName: name,
-          qrcode: true,
+          qrcode: false,
           integration: 'WHATSAPP-BAILEYS',
-          ...(settings?.bot_phone ? { number: settings.bot_phone } : {}),
         },
       })
     } catch (error) {
@@ -158,8 +188,7 @@ router.post(
     // A URL aqui é a que a Evolution vai usar para falar com o Chatwoot: o host
     // interno do Docker quando existir, senão o endereço público.
     const inboxName = `wissen-${tenant.slug}`
-    const chatwootUrlParaEvolution =
-      settings?.chatwoot_base_url || process.env.CHATWOOT_INTERNAL_URL || process.env.CHATWOOT_BASE_URL || null
+    const chatwootUrlParaEvolution = escolheUrlDoChatwoot(settings)
 
     if (channel?.chatwoot_account_id && chatwootUrlParaEvolution && settings?.chatwoot_token) {
       await evolution(config, `chatwoot/set/${name}`, {
@@ -189,10 +218,11 @@ router.post(
       )
     }
 
-    let qrcode = readQrCode(created)
-    if (!qrcode) {
+    // Agora sim: o QR nasce depois do restart provocado pelo chatwoot/set.
+    let qrcode = null
+    {
       const connect = await evolution(config, `instance/connect/${name}`)
-      qrcode = readQrCode(connect)
+      qrcode = readQrCode(connect) ?? readQrCode(created)
     }
 
     // A inbox é criada pela Evolution; sem guardar o id aqui a RPC
