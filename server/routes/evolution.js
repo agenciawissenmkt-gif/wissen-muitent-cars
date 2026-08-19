@@ -36,7 +36,7 @@ const simulated = new Map()
 /** A URL da Evolution pode vir das configurações da loja ou do ambiente. */
 function evolutionConfig(settings) {
   const baseUrl = (settings?.evolution_base_url || process.env.EVOLUTION_API_URL || '').replace(/\/$/, '')
-  const apiKey = process.env.EVOLUTION_API_KEY
+  const apiKey = (process.env.EVOLUTION_API_KEY || '').trim()
 
   if (!baseUrl || !apiKey) {
     if (SIMULATE) return null
@@ -66,8 +66,13 @@ async function evolution(config, path, { method = 'GET', body } = {}) {
   }
 
   if (!res.ok) {
-    const message = data?.response?.message || data?.message || data?.error || `Erro (${res.status})`
-    throw new HttpError(502, `Evolution API: ${Array.isArray(message) ? message.join(', ') : message}`)
+    const message = data?.response?.message || data?.message || data?.error || 'Erro (' + res.status + ')'
+    const texto = Array.isArray(message) ? message.join(', ') : message
+    let host = config.baseUrl
+    try { host = new URL(config.baseUrl).host } catch { /* mantem como veio */ }
+    // Sem esta pista o erro vira caca ao tesouro: 'Unauthorized' pode ser a
+    // chave da Evolution OU o token do Chatwoot que a Evolution repassa.
+    throw new HttpError(502, 'Evolution API: ' + texto, method + ' ' + host + '/' + path + ' - HTTP ' + res.status)
   }
 
   return data
@@ -104,6 +109,34 @@ function simulatedQr(name) {
  * Descobre a inbox criada pela integração no Chatwoot. O par
  * (chatwoot_account_id, chatwoot_inbox_id) é o que resolve_tenant() usa no N8N.
  */
+/**
+ * A Evolution usa este token para criar a inbox no Chatwoot. Se ele for de um
+ * Agent Bot (que nao pode usar a API de conta), o Chatwoot devolve 401 e a
+ * Evolution repassa como "Unauthorized" - um erro que PARECE da Evolution e
+ * manda a investigacao para o lado errado. Conferimos antes e falamos claro.
+ */
+async function garanteTokenDeAdmin(settings, accountId) {
+  const baseUrl = settings?.chatwoot_base_url
+  if (!baseUrl || !settings?.chatwoot_token || !accountId) return
+
+  let res
+  try {
+    res = await fetch(baseUrl + '/api/v1/accounts/' + accountId + '/inboxes', {
+      headers: { api_access_token: settings.chatwoot_token },
+    })
+  } catch {
+    return // rede instavel nao e motivo para travar a etapa
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    throw new HttpError(
+      400,
+      'O token salvo da central nao tem permissao de administrador.',
+      'Provavelmente e o token de um Agent Bot. Limpe tenant_settings.chatwoot_token e refaca a etapa 3 para gerar o token certo.',
+    )
+  }
+}
+
 async function findInboxId(settings, tenant, accountId) {
   if (!settings?.chatwoot_base_url || !settings?.chatwoot_token || !accountId) return null
 
@@ -191,6 +224,7 @@ router.post(
     const chatwootUrlParaEvolution = escolheUrlDoChatwoot(settings)
 
     if (channel?.chatwoot_account_id && chatwootUrlParaEvolution && settings?.chatwoot_token) {
+      await garanteTokenDeAdmin(settings, channel.chatwoot_account_id)
       await evolution(config, `chatwoot/set/${name}`, {
         method: 'POST',
         body: {
