@@ -41,11 +41,23 @@ async function accountApi(accountId, path, { method = 'GET', body, token } = {})
   return data
 }
 
+/**
+ * O Chatwoot não é consistente: `inboxes` devolve `{payload: [...]}`, mas
+ * `webhooks` devolve `{payload: {webhooks: [...]}}`. Esta função aceita as três
+ * formas e sempre entrega um array — sem ela, um `.find` estoura a etapa 3.
+ */
+function comoLista(data, chave) {
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.payload)) return data.payload
+  if (chave && Array.isArray(data?.payload?.[chave])) return data.payload[chave]
+  if (chave && Array.isArray(data?.[chave])) return data[chave]
+  return []
+}
+
 /** Procura a inbox criada pela Evolution (ela nomeia a inbox com `nameInbox`). */
 export async function findInboxByName(accountId, token, name) {
   const data = await accountApi(accountId, 'inboxes', { token })
-  const list = Array.isArray(data) ? data : (data?.payload ?? [])
-  return list.find((inbox) => inbox?.name === name) ?? null
+  return comoLista(data, 'inboxes').find((inbox) => inbox?.name === name) ?? null
 }
 
 /**
@@ -57,8 +69,7 @@ export async function ensureAgentWebhook(accountId, token) {
   if (!url) return { skipped: 'N8N_AGENT_WEBHOOK_URL não definida' }
 
   const data = await accountApi(accountId, 'webhooks', { token })
-  const list = Array.isArray(data) ? data : (data?.payload ?? [])
-  const existing = list.find((hook) => hook?.url === url)
+  const existing = comoLista(data, 'webhooks').find((hook) => hook?.url === url)
   if (existing) return { id: existing.id, created: false }
 
   const created = await accountApi(accountId, 'webhooks', {
