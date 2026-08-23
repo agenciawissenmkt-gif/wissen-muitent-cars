@@ -59,6 +59,24 @@ async function canManageAccount(accountId) {
   }
 }
 
+/**
+ * O painel so consegue criar usuarios em central que ele mesmo criou. Para as
+ * criadas por fora, o unico caminho e um token de administrador informado a
+ * mao -- e antes de confiar nele precisamos saber se ele realmente abre a API
+ * da conta. Bot e usuario sem acesso devolvem 401/403 aqui.
+ */
+async function tokenEhDeAdmin(baseUrl, accountId, token) {
+  if (!token) return false
+  try {
+    const res = await fetch(baseUrl + '/api/v1/accounts/' + accountId + '/inboxes', {
+      headers: { api_access_token: token },
+    })
+    return res.status !== 401 && res.status !== 403
+  } catch {
+    return true // rede instavel nao e motivo para travar a etapa
+  }
+}
+
 function safeJson(text) {
   try {
     return JSON.parse(text)
@@ -134,13 +152,39 @@ router.post(
       const account = await platform('accounts', { method: 'POST', body: { name: tenant.nome } })
       accountId = account.id
     } else if (!(await canManageAccount(accountId))) {
-      // Conta criada fora do painel: dá para cadastrar a equipe aqui, mas o
-      // convite precisa ser feito no próprio Chatwoot. Não criamos usuários
-      // soltos, que ficariam sem conta nenhuma.
+      // Central criada fora do painel: o Platform App nao pode criar usuarios
+      // nela. Antes isto respondia 200 com um aviso discreto e parava no meio,
+      // deixando a loja sem equipe, SEM WEBHOOK e sem token -- e o lojista via
+      // o selo verde de central provisionada. O webhook e o que faz a IA
+      // receber as mensagens: sem ele nao ha atendimento nenhum. Entao aqui e
+      // erro, nao aviso.
+      const tokenInformado = settings?.chatwoot_token ?? null
+
+      if (!(await tokenEhDeAdmin(baseUrl, accountId, tokenInformado))) {
+        throw new HttpError(
+          400,
+          'A central #' + accountId + ' foi criada fora do painel e nao pode ser configurada sozinha.',
+          'Informe em tenant_settings.chatwoot_token o token de acesso de um administrador dessa central e repita esta etapa. Token de Agent Bot nao serve: o Chatwoot nao deixa bot usar a API da conta.',
+        )
+      }
+
+      // Com um token valido ainda da para deixar a loja funcionando: registra o
+      // webhook e guarda o endereco. So a equipe fica pendente.
+      const webhookExterno = await ensureAgentWebhook(accountId, tokenInformado)
+
+      await upsertChannel(tenant.id, { chatwoot_account_id: accountId, ativo: true })
+
+      const patchExterno = { tenant_id: tenant.id }
+      if (!settings?.chatwoot_base_url) patchExterno.chatwoot_base_url = baseUrl
+      if (Object.keys(patchExterno).length > 1) {
+        await db.upsert('tenant_settings', [patchExterno], 'tenant_id')
+      }
+
       res.json({
         account_id: accountId,
         users: [],
-        warning: `A central #${accountId} foi criada fora do painel, então este Platform App não pode adicionar usuários nela. Convide a equipe direto no Chatwoot (Configurações › Agentes) — a lista aqui continua servindo de referência para a IA.`,
+        webhook: webhookExterno,
+        warning: 'A central #' + accountId + ' foi criada fora do painel: o webhook do agente foi registrado e a IA ja atende, mas a equipe precisa ser convidada direto no Chatwoot em Configuracoes > Agentes.',
       })
       return
     }
