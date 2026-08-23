@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { useTenant } from '../core/tenant'
 import { ONBOARDING_TO_STEP, STEP_TO_ONBOARDING } from '../core/types'
 import { CalendarIcon, ChatIcon, SettingsIcon, WhatsappIcon } from '../ui/icons'
+import { ConnectionStatus } from './implementation/ConnectionStatus'
 import { StepRules } from './implementation/StepRules'
 import { StepCalendar } from './implementation/StepCalendar'
 import { StepChatwoot } from './implementation/StepChatwoot'
@@ -52,6 +53,8 @@ export function Implementation() {
           Quatro etapas para deixar seu agente de IA atendendo no WhatsApp.
         </p>
       </header>
+
+      <ConnectionStatus />
 
       <div className="relative mt-8">
         <div className="absolute left-0 top-5 h-0.5 w-full rounded-full bg-ink-200" />
