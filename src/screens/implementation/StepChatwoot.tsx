@@ -79,17 +79,15 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
       return
     }
 
+    // Já ser agente da central NÃO é impedimento: é o caso de quem foi criado
+    // direto no Chatwoot e agora está sendo trazido para o cadastro da loja. O
+    // provisionamento reaproveita o acesso em vez de tentar convidar de novo.
+    // Bloquear aqui seria travar exatamente esse cadastro.
     const naCentral = agentesDaCentral.find((a) => a.email === emailLimpo)
-    if (naCentral) {
-      setError({
-        message: `${emailLimpo} já tem acesso à central desta loja (${naCentral.name}).`,
-        hint: 'Cadastre com outro e-mail, ou remova esse agente no Chatwoot antes de repetir.',
-      })
-      return
-    }
 
     setAdding(true)
     setError(null)
+    setAvisos([])
     const { error: insertError } = await supabase.from('salespeople').insert({
       tenant_id: tenantId,
       name: name.trim(),
@@ -105,6 +103,11 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
             : insertError.message,
       })
     } else {
+      if (naCentral) {
+        setAvisos([
+          `${naCentral.name} já tem acesso a esta central. Vamos reaproveitar o acesso dela, sem mandar convite novo.`,
+        ])
+      }
       setName('')
       setEmail('')
       setRole('agent')
