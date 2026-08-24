@@ -2,7 +2,7 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import { db, HttpError, upsertChannel } from '../lib/db.js'
 import { requireTenant, route } from '../lib/auth.js'
-import { ensureAgentWebhook } from '../lib/chatwoot-account.js'
+import { ensureAgentWebhook, ensureInboxMembers, listAccountAgents } from '../lib/chatwoot-account.js'
 
 const router = Router()
 
@@ -189,11 +189,31 @@ router.post(
       return
     }
 
+    // O administrador (dono da loja) vem primeiro: e o token dele que abre a API
+    // da conta para tudo que vem depois. Processar um vendedor antes fazia o
+    // painel guardar um token sem permissao de administrador.
+    const ordenado = [...team].sort(
+      (a, b) => (a.role === 'administrator' ? 0 : 1) - (b.role === 'administrator' ? 0 : 1),
+    )
+
+    // Quem ja e agente desta central, por e-mail. Serve para reaproveitar o
+    // usuario em vez de tentar cria-lo de novo (e levar 422 a toa).
+    const jaNaConta = new Map()
+    if (settings?.chatwoot_token) {
+      const agentes = await listAccountAgents(accountId, settings.chatwoot_token).catch(() => [])
+      for (const agente of agentes) {
+        const chave = String(agente?.email || '').toLowerCase()
+        if (chave) jaNaConta.set(chave, agente)
+      }
+    }
+
     const users = []
+    const conflitos = []
     let adminToken = settings?.chatwoot_token ?? null
 
-    for (const person of team) {
-      let userId = person.chatwoot_user_id ?? null
+    for (const person of ordenado) {
+      const email = String(person.email || '').toLowerCase()
+      let userId = person.chatwoot_user_id ?? jaNaConta.get(email)?.id ?? null
       let invited = false
       let accessToken = null
 
@@ -212,8 +232,20 @@ router.post(
           accessToken = created.access_token ?? null
           invited = true
         } catch (error) {
-          // 422 = usuário já existe no Chatwoot (outra loja ou cadastro anterior)
-          if (error.status !== 422) throw error
+          if ((error.chatwootStatus ?? error.status) !== 422) throw error
+
+          // 422 = esse e-mail ja tem conta no Chatwoot e nao e agente desta
+          // central (senao teria vindo em jaNaConta). A Platform API nao busca
+          // usuario por e-mail, entao nao da para reaproveitar sozinho. Antes o
+          // erro era engolido em silencio e a pessoa simplesmente nunca virava
+          // agente -- ninguem descobria ate a conversa nao ter para quem ir.
+          conflitos.push({
+            nome: person.name,
+            email: person.email,
+            motivo: 'Esse e-mail ja tem conta em outro Chatwoot desta instalacao.',
+          })
+          users.push({ email: person.email, chatwoot_user_id: null, role: person.role, invited: false })
+          continue
         }
       }
 
@@ -222,7 +254,7 @@ router.post(
           method: 'POST',
           body: { user_id: userId, role: person.role },
         }).catch((error) => {
-          if (error.status !== 422) throw error // 422 = já pertence à conta
+          if ((error.chatwootStatus ?? error.status) !== 422) throw error // 422 = já pertence à conta
         })
 
         await db.update('salespeople', `id=eq.${person.id}`, { chatwoot_user_id: userId })
@@ -252,7 +284,49 @@ router.post(
     // Sem este webhook o Chatwoot nunca avisa o n8n e a IA não responde.
     const webhook = await ensureAgentWebhook(accountId, adminToken)
 
-    res.json({ account_id: accountId, users, webhook })
+    // E sem isto o vendedor vira agente da conta e mesmo assim nao aparece no
+    // seletor "Agente atribuido" da conversa: aquele seletor lista membros da
+    // inbox, nao agentes da conta. Na etapa 3 a inbox ainda nao existe (quem a
+    // cria e a Evolution, na etapa 4) — por isso esta sincronizacao roda de
+    // novo quando a implantacao e concluida, ja com a inbox no lugar.
+    const idsDaEquipe = users.map((u) => u.chatwoot_user_id).filter(Boolean)
+    const inbox = await ensureInboxMembers(
+      accountId,
+      adminToken,
+      channel?.chatwoot_inbox_id ?? null,
+      idsDaEquipe,
+    ).catch(() => null)
+
+    res.json({ account_id: accountId, users, conflitos, webhook, inbox })
+  }),
+)
+
+/**
+ * Agentes que ja existem na central da loja. O painel usa isto para avisar,
+ * ANTES de cadastrar, que aquele e-mail ja esta em uso — em vez de deixar a
+ * pessoa descobrir so na hora da sincronizacao.
+ */
+router.get(
+  '/team',
+  route(async (req, res) => {
+    const { tenant, settings } = await requireTenant(req)
+    const channel = await db.selectOne('tenant_channels', `tenant_id=eq.${tenant.id}&select=*`)
+    const accountId = channel?.chatwoot_account_id ?? null
+
+    if (!accountId || !settings?.chatwoot_token) {
+      res.json({ agents: [] })
+      return
+    }
+
+    const agentes = await listAccountAgents(accountId, settings.chatwoot_token).catch(() => [])
+    res.json({
+      agents: agentes.map((a) => ({
+        id: a?.id ?? null,
+        name: a?.name ?? '',
+        email: String(a?.email || '').toLowerCase(),
+        role: a?.role ?? null,
+      })),
+    })
   }),
 )
 
