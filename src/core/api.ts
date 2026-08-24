@@ -68,7 +68,9 @@ export function googleDisconnect(tenantId: string) {
 
 export interface ChatwootProvisionResult {
   account_id: number
-  users: { email: string; chatwoot_user_id: number; role: string; invited: boolean }[]
+  users: { email: string; chatwoot_user_id: number | null; role: string; invited: boolean }[]
+  /** E-mails que o Chatwoot recusou por já pertencerem a outra conta. */
+  conflitos?: { nome: string; email: string; motivo: string }[]
   /** Preenchido quando a central existe mas não pode ser administrada pelo painel. */
   warning?: string
 }
@@ -78,6 +80,18 @@ export function provisionChatwoot(tenantId: string) {
     method: 'POST',
     body: JSON.stringify({ tenant_id: tenantId }),
   })
+}
+
+export interface ChatwootAgent {
+  id: number | null
+  name: string
+  email: string
+  role: string | null
+}
+
+/** Agentes que já existem na central da loja — usado para avisar sobre e-mail repetido. */
+export function chatwootTeam(tenantId: string) {
+  return request<{ agents: ChatwootAgent[] }>(`/chatwoot/team?tenant_id=${encodeURIComponent(tenantId)}`)
 }
 
 // --- Evolution API (WhatsApp) ----------------------------------------------
