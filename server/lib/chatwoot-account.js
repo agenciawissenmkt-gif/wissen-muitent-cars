@@ -80,3 +80,45 @@ export async function ensureAgentWebhook(accountId, token) {
 
   return { id: created?.payload?.id ?? created?.id ?? null, created: true }
 }
+
+/** Agentes que ja existem na conta da loja (para avisar sobre e-mail repetido). */
+export async function listAccountAgents(accountId, token) {
+  const data = await accountApi(accountId, 'agents', { token })
+  return comoLista(data, 'agents')
+}
+
+/**
+ * O seletor "Agente atribuido" de uma conversa nao lista todos os agentes da
+ * conta: lista quem e MEMBRO daquela inbox. Um vendedor cadastrado no painel
+ * virava agente da conta e mesmo assim nao aparecia ali — nem para o dono da
+ * loja escolher, nem para a Julia transferir. Por isso, toda vez que a equipe
+ * e sincronizada, garantimos que ela seja membro da inbox do WhatsApp.
+ *
+ * O POST do Chatwoot substitui a lista, entao mandamos a uniao entre quem ja
+ * esta la e quem falta — nunca so os novos.
+ */
+export async function ensureInboxMembers(accountId, token, inboxId, userIds) {
+  const desejados = [...new Set((userIds || []).filter(Boolean).map(Number))]
+  if (!inboxId || desejados.length === 0) return { skipped: 'sem inbox ou sem equipe' }
+
+  let atuais = []
+  try {
+    const data = await accountApi(accountId, 'inbox_members/' + inboxId, { token })
+    atuais = comoLista(data, 'inbox_members').map((u) => Number(u?.id)).filter(Boolean)
+  } catch {
+    // inbox recem-criada ainda pode nao responder aqui; seguimos com a lista nova
+  }
+
+  const uniao = [...new Set([...atuais, ...desejados])]
+  if (uniao.length === atuais.length && desejados.every((id) => atuais.includes(id))) {
+    return { inbox_id: inboxId, membros: atuais.length, alterado: false }
+  }
+
+  await accountApi(accountId, 'inbox_members', {
+    method: 'POST',
+    token,
+    body: { inbox_id: inboxId, user_ids: uniao },
+  })
+
+  return { inbox_id: inboxId, membros: uniao.length, alterado: true }
+}
