@@ -7,6 +7,7 @@ import {
   completeProvisioning,
   createWhatsappInstance,
   disconnectWhatsapp,
+  provisionChatwoot,
   whatsappState,
   type EvolutionState,
 } from '../../core/api'
@@ -57,6 +58,13 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
 
     try {
       await updateStore({ onboarding_step: 'concluido' })
+
+      // Sincroniza a equipe de novo agora que a inbox do WhatsApp existe: e
+      // esta passada que liga cada vendedor a inbox e faz ele aparecer no
+      // seletor "Agente atribuido" da conversa. Nao pode derrubar a conclusao
+      // se falhar — o WhatsApp ja esta conectado a esta altura.
+      await provisionChatwoot(tenantId).catch(() => undefined)
+
       const result = await completeProvisioning(tenantId)
       toast(
         result.forwarded
