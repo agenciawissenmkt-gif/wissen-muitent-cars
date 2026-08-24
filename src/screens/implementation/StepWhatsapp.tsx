@@ -18,7 +18,10 @@ import { useToast } from '../../ui/Feedback'
 import { CheckIcon, WhatsappIcon } from '../../ui/icons'
 import { InfoNote, StepCard } from './StepCard'
 
-const POLL_INTERVAL = 3000
+// 3 s era agressivo demais: cada ciclo batia em /state e /state pedia connect,
+// o que abria um socket novo do Baileys a cada volta. Com /state agora sendo
+// leitura pura, 5 s é folgado e ainda parece instantâneo para o lojista.
+const POLL_INTERVAL = 5000
 
 const INSTRUCTIONS = [
   'Abra o WhatsApp no celular que vai atender os clientes.',
@@ -72,18 +75,34 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
     }
   }, [tenantId, updateStore, refresh, toast])
 
-  // Enquanto o QR estiver na tela, consulta o status da instância.
+  // `finish` entra por ref para que o efeito abaixo não dependa dele: se
+  // dependesse, cada renderização criaria um intervalo novo.
+  const finishRef = useRef(finish)
   useEffect(() => {
-    if (!tenantId || connected) return
-    if (!state || state.status === 'pendente') return
+    finishRef.current = finish
+  }, [finish])
+
+  // Enquanto o QR estiver na tela, consulta o status da instância.
+  //
+  // O efeito depende de `aguardando` (um booleano), e não de `state`. Antes ele
+  // dependia do objeto inteiro, que muda a cada ciclo do polling — então o
+  // intervalo era destruído e recriado a cada 3 s, e em qualquer corrida de
+  // renderização dava para existir mais de um rodando ao mesmo tempo, cada um
+  // batendo na Evolution por conta própria.
+  const aguardando = Boolean(state) && state?.status !== 'pendente'
+
+  useEffect(() => {
+    if (!tenantId || connected || !aguardando) return
 
     const timer = setInterval(async () => {
       try {
         const next = await whatsappState(tenantId)
-        setState(next)
+        // O QR nasce no POST /instance; o polling só relata estado. Quando a
+        // resposta vem sem QR, mantemos o que já está na tela em vez de apagá-lo.
+        setState((prev) => ({ ...next, qrcode: next.qrcode ?? prev?.qrcode ?? null }))
         if (next.status === 'conectado') {
           clearInterval(timer)
-          void finish()
+          void finishRef.current()
         }
       } catch {
         /* o polling volta a tentar no próximo ciclo */
@@ -91,7 +110,7 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
     }, POLL_INTERVAL)
 
     return () => clearInterval(timer)
-  }, [tenantId, state, connected, finish])
+  }, [tenantId, connected, aguardando])
 
   async function start() {
     if (!tenantId) return
