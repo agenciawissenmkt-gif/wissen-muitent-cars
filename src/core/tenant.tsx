@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { supabase } from './supabase'
 import { useAuth } from './auth'
 import type {
@@ -44,6 +44,20 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   /**
+   * Só a PRIMEIRA carga pode ligar `loading`.
+   *
+   * O AppShell troca a rota inteira por um spinner enquanto `loading` está
+   * ligado. Como o refresh() religava essa bandeira, todo salvamento — cadastrar
+   * um vendedor, por exemplo — desmontava a tela e a montava de novo: o estado
+   * local morria junto, e a Implementação voltava para a etapa gravada em
+   * `onboarding_step`. Era isso que jogava o lojista para a etapa 4 a cada
+   * vendedor cadastrado, no meio do cadastro.
+   *
+   * Depois da primeira carga, um refresh() apenas atualiza os dados em silêncio.
+   */
+  const jaCarregou = useRef(false)
+
+  /**
    * Carrega a loja do usuário logado. Se ela ainda não existe — ou existe sem
    * tenant vinculado — a função bootstrap_store() no banco cria loja, tenant,
    * settings e os três agentes de uma vez só.
@@ -57,11 +71,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setAgents([])
       setSalespeople([])
       setGoogle(null)
+      jaCarregou.current = false
       setLoading(false)
       return
     }
 
-    setLoading(true)
+    if (!jaCarregou.current) setLoading(true)
     setError(null)
 
     try {
@@ -112,6 +127,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível carregar os dados da loja.')
     } finally {
+      jaCarregou.current = true
       setLoading(false)
     }
   }, [user])
