@@ -178,20 +178,28 @@ async function garanteTokenDeAdmin(settings, accountId) {
 }
 
 /**
- * A Chatwoot fala com a Evolution pela webhook_url da inbox. Quem cria essa URL
- * e o chatwoot/set, mas SO na primeira vez: quando ja existe uma inbox com o
- * mesmo nome, a Evolution reaproveita a inbox e nao reescreve a URL.
+ * Duas coisas da inbox que precisam estar certas para a loja funcionar, e que
+ * a Evolution so acerta quando ela mesma cria a inbox pela primeira vez.
  *
- * Como a inbox tem o nome da loja e sobrevive a exclusao da instancia, um
- * "reconectar outro numero" deixa a inbox apontando para a instancia ANTIGA.
- * O resultado engana: a mensagem do cliente chega (esse caminho e a Evolution
- * empurrando para a Chatwoot com o token da conta), a Julia responde, a resposta
- * entra na Chatwoot com visto de enviada — e morre num endereco que nao existe
- * mais. Ninguem recebe nada no WhatsApp.
+ * 1. webhook_url — e por ela que a Chatwoot fala com a Evolution. Quem escreve
+ *    essa URL e o chatwoot/set, mas SO na criacao: se ja existe uma inbox com
+ *    aquele nome, a Evolution reaproveita e nao reescreve a URL. Como a inbox
+ *    tem o nome da loja e sobrevive a exclusao da instancia, um "reconectar
+ *    outro numero" deixa a inbox apontando para a instancia ANTIGA. O resultado
+ *    engana: a mensagem do cliente chega (esse caminho e a Evolution empurrando
+ *    para a Chatwoot com o token da conta), a Julia responde, a resposta entra
+ *    na Chatwoot com visto de enviada — e morre num endereco que nao existe
+ *    mais. Ninguem recebe nada no WhatsApp.
  *
- * Por isso conferimos e corrigimos a URL toda vez que ligamos uma instancia.
+ * 2. enable_auto_assignment — a Chatwoot cria inbox com atribuicao automatica
+ *    LIGADA. Com ela ligada, toda conversa nova cai no colo de um atendente
+ *    humano que esteja online, e o fluxo do agente — que se cala de proposito
+ *    quando ha humano designado — nunca responde. Pior: o sintoma e
+ *    intermitente, porque depende de ter alguem logado na central naquele
+ *    momento. Neste produto quem atende primeiro e a IA; o humano assume por
+ *    decisao, nao por sorteio.
  */
-async function garanteWebhookDaInbox({ settings, accountId, inboxId, evolutionBaseUrl, name }) {
+async function garanteInboxDoAgente({ settings, accountId, inboxId, evolutionBaseUrl, name }) {
   if (!settings?.chatwoot_base_url || !settings?.chatwoot_token || !accountId || !inboxId) return
   if (!evolutionBaseUrl || !name) return
 
@@ -203,13 +211,18 @@ async function garanteWebhookDaInbox({ settings, accountId, inboxId, evolutionBa
     if (!atualRes.ok) return
 
     const inbox = await atualRes.json()
-    const atual = inbox?.webhook_url ?? inbox?.channel?.webhook_url ?? null
-    if (atual === esperado) return
+    const urlAtual = inbox?.webhook_url ?? inbox?.channel?.webhook_url ?? null
+
+    const correcao = {}
+    if (urlAtual !== esperado) correcao.channel = { webhook_url: esperado }
+    if (inbox?.enable_auto_assignment !== false) correcao.enable_auto_assignment = false
+
+    if (Object.keys(correcao).length === 0) return
 
     await fetch(endereco, {
       method: 'PATCH',
       headers: { api_access_token: settings.chatwoot_token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ channel: { webhook_url: esperado } }),
+      body: JSON.stringify(correcao),
     })
   } catch {
     // Nao vale travar a conexao do WhatsApp por causa disso; o monitor acusa depois.
@@ -268,7 +281,7 @@ router.post(
         ...(inboxId ? { chatwoot_inbox_id: inboxId } : {}),
       })
       await db.upsert('tenant_settings', [{ tenant_id: tenant.id, evolution_instance: name }], 'tenant_id')
-      await garanteWebhookDaInbox({
+      await garanteInboxDoAgente({
         settings,
         accountId: channel?.chatwoot_account_id,
         inboxId,
@@ -377,7 +390,7 @@ router.post(
       chatwoot_inbox_id: inboxId,
     })
     await db.upsert('tenant_settings', [{ tenant_id: tenant.id, evolution_instance: name }], 'tenant_id')
-    await garanteWebhookDaInbox({
+    await garanteInboxDoAgente({
       settings,
       accountId: channel?.chatwoot_account_id,
       inboxId,
