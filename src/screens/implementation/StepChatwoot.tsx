@@ -1,7 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../core/supabase'
 import { useTenant } from '../../core/tenant'
-import { ApiError, provisionChatwoot } from '../../core/api'
+import { useAuth } from '../../core/auth'
+import { ApiError, chatwootTeam, provisionChatwoot, type ChatwootAgent } from '../../core/api'
 import type { SalespersonRole } from '../../core/types'
 import { Button } from '../../ui/Button'
 import { Input } from '../../ui/Field'
@@ -16,6 +17,7 @@ const ROLE_LABEL: Record<SalespersonRole, string> = {
 
 export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const { store, settings, channel, salespeople, refresh } = useTenant()
+  const { user } = useAuth()
   const tenantId = store?.tenant_id ?? null
   const { toast } = useToast()
 
@@ -23,22 +25,76 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<SalespersonRole>('agent')
   const [adding, setAdding] = useState(false)
-  const [provisioning, setProvisioning] = useState(false)
+  const [sincronizando, setSincronizando] = useState(false)
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null)
+  const [avisos, setAvisos] = useState<string[]>([])
+  const [agentesDaCentral, setAgentesDaCentral] = useState<ChatwootAgent[]>([])
 
   const provisioned = Boolean(channel?.chatwoot_account_id)
+
+  // O administrador é o dono da conta. Enquanto ele não existir, o formulário
+  // fica travado nesse papel: é o token dele que abre a central para tudo que
+  // vem depois, então cadastrar vendedor antes só produz uma central meio-feita.
+  const admin = salespeople.find((p) => p.role === 'administrator') ?? null
+  const faltaAdmin = !admin
+  const vendedores = salespeople.filter((p) => p.role === 'agent')
+
+  // Pré-preenche o administrador com quem está logado — é o dono da loja.
+  const prefilled = useRef(false)
+  useEffect(() => {
+    if (prefilled.current || !faltaAdmin || !user) return
+    prefilled.current = true
+    setName((user.user_metadata?.full_name as string | undefined) ?? store?.name ?? '')
+    setEmail(user.email ?? '')
+  }, [faltaAdmin, user, store?.name])
+
+  const carregarAgentes = useCallback(async () => {
+    if (!tenantId || !provisioned) return
+    try {
+      const { agents } = await chatwootTeam(tenantId)
+      setAgentesDaCentral(agents)
+    } catch {
+      /* a checagem de e-mail repetido é um conforto, não pode travar a etapa */
+    }
+  }, [tenantId, provisioned])
+
+  useEffect(() => {
+    void carregarAgentes()
+  }, [carregarAgentes])
 
   async function addPerson(event: FormEvent) {
     event.preventDefault()
     if (!tenantId || !name.trim() || !email.trim()) return
+
+    const papel: SalespersonRole = faltaAdmin ? 'administrator' : role
+    const emailLimpo = email.trim().toLowerCase()
+
+    // Avisar antes de gravar, e não depois de o Chatwoot recusar lá na frente.
+    const naEquipe = salespeople.find((p) => p.email.toLowerCase() === emailLimpo)
+    if (naEquipe) {
+      setError({
+        message: `${emailLimpo} já está na equipe desta loja, como ${ROLE_LABEL[naEquipe.role].toLowerCase()}.`,
+        hint: 'Use outro e-mail ou remova a pessoa da lista antes de cadastrar de novo.',
+      })
+      return
+    }
+
+    const naCentral = agentesDaCentral.find((a) => a.email === emailLimpo)
+    if (naCentral) {
+      setError({
+        message: `${emailLimpo} já tem acesso à central desta loja (${naCentral.name}).`,
+        hint: 'Cadastre com outro e-mail, ou remova esse agente no Chatwoot antes de repetir.',
+      })
+      return
+    }
 
     setAdding(true)
     setError(null)
     const { error: insertError } = await supabase.from('salespeople').insert({
       tenant_id: tenantId,
       name: name.trim(),
-      email: email.trim().toLowerCase(),
-      role,
+      email: emailLimpo,
+      role: papel,
     })
 
     if (insertError) {
@@ -62,33 +118,56 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
     await refresh()
   }
 
-  async function provision() {
+  /**
+   * Não existe mais botão de sincronizar: quem sincroniza é o Continuar. A
+   * central precisa existir antes da etapa 4 (é a Evolution que cria a inbox
+   * dentro dela), então este é o último momento possível. Ao concluir a
+   * implantação a equipe é sincronizada de novo, aí já com a inbox no lugar.
+   */
+  async function continuar() {
     if (!tenantId) return
-    if (salespeople.length === 0) {
-      setError({ message: 'Cadastre pelo menos um membro da equipe antes de criar a central.' })
+
+    if (faltaAdmin) {
+      setError({ message: 'Cadastre o administrador da loja antes de seguir.' })
       return
     }
 
-    setProvisioning(true)
+    setSincronizando(true)
     setError(null)
+    setAvisos([])
+
     try {
       const result = await provisionChatwoot(tenantId)
       await refresh()
+      await carregarAgentes()
+
+      if (result.conflitos?.length) {
+        // O e-mail existe em outra conta do mesmo Chatwoot. Não dá para seguir
+        // fingindo que a pessoa entrou: ela não receberia conversa nenhuma.
+        setAvisos(result.conflitos.map((c) => `${c.nome} (${c.email}): ${c.motivo}`))
+        setError({
+          message: 'Alguns e-mails não puderam ser cadastrados na central.',
+          hint: 'Troque o e-mail dessas pessoas na lista acima e clique em Continuar de novo.',
+        })
+        return
+      }
 
       if (result.warning) {
         setError({ message: result.warning })
         toast('Central já existente — veja o aviso abaixo.', 'info')
-      } else {
-        toast(`Central criada (conta #${result.account_id}) com ${result.users.length} usuário(s).`)
+        return
       }
+
+      toast(`Central sincronizada com ${result.users.length} pessoa(s).`)
+      onNext()
     } catch (err) {
       setError(
         err instanceof ApiError
           ? { message: err.message, hint: err.hint }
-          : { message: err instanceof Error ? err.message : 'Falha ao provisionar a central.' },
+          : { message: err instanceof Error ? err.message : 'Falha ao sincronizar a central.' },
       )
     } finally {
-      setProvisioning(false)
+      setSincronizando(false)
     }
   }
 
@@ -98,11 +177,11 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
       description="Criamos a conta da sua loja no Chatwoot e damos acesso à sua equipe. É lá que os vendedores assumem a conversa quando a IA transfere."
       footer={
         <>
-          <Button variant="ghost" onClick={onBack}>
+          <Button variant="ghost" onClick={onBack} disabled={sincronizando}>
             Voltar
           </Button>
-          <Button onClick={onNext} variant={provisioned ? 'primary' : 'secondary'}>
-            {provisioned ? 'Continuar' : 'Pular por enquanto'}
+          <Button onClick={() => void continuar()} loading={sincronizando} disabled={faltaAdmin}>
+            Continuar
           </Button>
         </>
       }
@@ -127,25 +206,41 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
             </span>
             <div>
               <h3 className="text-sm font-bold text-ink-900">Sua central ainda não foi criada</h3>
-              <p className="text-sm text-ink-500">Cadastre a equipe abaixo e clique em “Criar central”.</p>
+              <p className="text-sm text-ink-500">
+                Cadastre o administrador e a equipe. Ao clicar em Continuar, criamos tudo no Chatwoot.
+              </p>
             </div>
           </div>
         )}
 
         <section>
-          <h3 className="text-sm font-bold text-ink-900">Equipe de vendas</h3>
+          <h3 className="text-sm font-bold text-ink-900">
+            {faltaAdmin ? 'Administrador da loja' : 'Equipe de vendas'}
+          </h3>
           <p className="mt-1 text-xs text-ink-500">
-            Cada pessoa recebe um convite por e-mail do Chatwoot para definir a própria senha.
+            {faltaAdmin
+              ? 'Comece pelo dono da loja: é a conta que administra a central. Depois de cadastrá-lo, os vendedores são liberados.'
+              : 'Cada pessoa recebe um convite por e-mail do Chatwoot para definir a própria senha.'}
           </p>
 
           <form onSubmit={addPerson} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-            <Input placeholder="Nome do vendedor" value={name} onChange={(e) => setName(e.target.value)} />
-            <Input type="email" placeholder="email@loja.com.br" value={email} onChange={(e) => setEmail(e.target.value)} />
+            <Input
+              placeholder={faltaAdmin ? 'Nome do administrador' : 'Nome do vendedor'}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <Input
+              type="email"
+              placeholder="email@loja.com.br"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
             <div className="flex gap-2">
               <select
-                value={role}
+                value={faltaAdmin ? 'administrator' : role}
                 onChange={(e) => setRole(e.target.value as SalespersonRole)}
-                className="rounded-2xl border border-ink-200 bg-white px-3 text-sm focus:border-brand-500 focus:outline-none"
+                disabled={faltaAdmin}
+                className="rounded-2xl border border-ink-200 bg-white px-3 text-sm focus:border-brand-500 focus:outline-none disabled:cursor-not-allowed disabled:bg-ink-50 disabled:text-ink-500"
               >
                 <option value="agent">Vendedor</option>
                 <option value="administrator">Administrador</option>
@@ -184,16 +279,24 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
               ))}
             </ul>
           )}
+
+          {!faltaAdmin && vendedores.length === 0 && (
+            <p className="mt-3 text-xs text-ink-500">
+              Administrador cadastrado. Agora inclua os vendedores — são eles que aparecem para a Julia escolher
+              quando transfere uma conversa.
+            </p>
+          )}
         </section>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <Button onClick={() => void provision()} loading={provisioning} icon={<ChatIcon className="size-4" />}>
-            {provisioned ? 'Sincronizar equipe na central' : 'Criar central e convidar equipe'}
-          </Button>
-          <span className="text-xs text-ink-400">
-            Usa a chave Super Admin do Chatwoot, guardada apenas no servidor.
-          </span>
-        </div>
+        {avisos.length > 0 && (
+          <ul className="space-y-2">
+            {avisos.map((aviso) => (
+              <li key={aviso}>
+                <InfoNote tone="amber">{aviso}</InfoNote>
+              </li>
+            ))}
+          </ul>
+        )}
 
         {error && (
           <div className="space-y-2">
@@ -201,6 +304,11 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
             {error.hint && <InfoNote tone="amber">{error.hint}</InfoNote>}
           </div>
         )}
+
+        <p className="text-xs text-ink-400">
+          A sincronização com o Chatwoot acontece sozinha ao clicar em Continuar, e outra vez quando você conclui a
+          implantação. Usa a chave Super Admin do Chatwoot, guardada apenas no servidor.
+        </p>
       </div>
     </StepCard>
   )
