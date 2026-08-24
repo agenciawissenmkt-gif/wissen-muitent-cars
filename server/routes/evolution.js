@@ -177,6 +177,45 @@ async function garanteTokenDeAdmin(settings, accountId) {
   }
 }
 
+/**
+ * A Chatwoot fala com a Evolution pela webhook_url da inbox. Quem cria essa URL
+ * e o chatwoot/set, mas SO na primeira vez: quando ja existe uma inbox com o
+ * mesmo nome, a Evolution reaproveita a inbox e nao reescreve a URL.
+ *
+ * Como a inbox tem o nome da loja e sobrevive a exclusao da instancia, um
+ * "reconectar outro numero" deixa a inbox apontando para a instancia ANTIGA.
+ * O resultado engana: a mensagem do cliente chega (esse caminho e a Evolution
+ * empurrando para a Chatwoot com o token da conta), a Julia responde, a resposta
+ * entra na Chatwoot com visto de enviada — e morre num endereco que nao existe
+ * mais. Ninguem recebe nada no WhatsApp.
+ *
+ * Por isso conferimos e corrigimos a URL toda vez que ligamos uma instancia.
+ */
+async function garanteWebhookDaInbox({ settings, accountId, inboxId, evolutionBaseUrl, name }) {
+  if (!settings?.chatwoot_base_url || !settings?.chatwoot_token || !accountId || !inboxId) return
+  if (!evolutionBaseUrl || !name) return
+
+  const esperado = evolutionBaseUrl + '/chatwoot/webhook/' + name
+
+  try {
+    const endereco = settings.chatwoot_base_url + '/api/v1/accounts/' + accountId + '/inboxes/' + inboxId
+    const atualRes = await fetch(endereco, { headers: { api_access_token: settings.chatwoot_token } })
+    if (!atualRes.ok) return
+
+    const inbox = await atualRes.json()
+    const atual = inbox?.webhook_url ?? inbox?.channel?.webhook_url ?? null
+    if (atual === esperado) return
+
+    await fetch(endereco, {
+      method: 'PATCH',
+      headers: { api_access_token: settings.chatwoot_token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channel: { webhook_url: esperado } }),
+    })
+  } catch {
+    // Nao vale travar a conexao do WhatsApp por causa disso; o monitor acusa depois.
+  }
+}
+
 async function findInboxId(settings, tenant, accountId) {
   if (!settings?.chatwoot_base_url || !settings?.chatwoot_token || !accountId) return null
 
@@ -229,6 +268,13 @@ router.post(
         ...(inboxId ? { chatwoot_inbox_id: inboxId } : {}),
       })
       await db.upsert('tenant_settings', [{ tenant_id: tenant.id, evolution_instance: name }], 'tenant_id')
+      await garanteWebhookDaInbox({
+        settings,
+        accountId: channel?.chatwoot_account_id,
+        inboxId,
+        evolutionBaseUrl: config.baseUrl,
+        name,
+      })
 
       res.json({ instance: name, status: 'conectado', qrcode: null, inbox_id: inboxId })
       return
@@ -331,6 +377,13 @@ router.post(
       chatwoot_inbox_id: inboxId,
     })
     await db.upsert('tenant_settings', [{ tenant_id: tenant.id, evolution_instance: name }], 'tenant_id')
+    await garanteWebhookDaInbox({
+      settings,
+      accountId: channel?.chatwoot_account_id,
+      inboxId,
+      evolutionBaseUrl: config.baseUrl,
+      name,
+    })
 
     res.json({ instance: name, status: 'aguardando_leitura', qrcode, chatwoot_inbox_id: inboxId })
   }),
