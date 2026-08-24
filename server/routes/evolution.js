@@ -78,6 +78,46 @@ async function evolution(config, path, { method = 'GET', body } = {}) {
   return data
 }
 
+/**
+ * O UNICO lugar que pode chamar instance/connect.
+ *
+ * Na Evolution `GET /instance/connect/:nome` NAO e leitura: ele abre um socket
+ * novo do Baileys para aquela sessao. O WhatsApp so aceita um socket por
+ * sessao — quando um segundo autentica, o primeiro cai com statusCode 440
+ * ("conflict", "type: replaced") e o Baileys tenta reconectar, o que colide com
+ * a proxima chamada. Era exatamente esse o loop que derrubava a conexao criada
+ * pelo painel: o polling da etapa 4 chamava /state de 3 em 3 segundos e /state
+ * chamava connect toda vez.
+ *
+ * Regras aqui:
+ *   - so conecta quando o estado e 'close' (nao existe socket);
+ *   - nunca conecta em 'connecting' (ou ja tem QR na tela, ou o aparelho acabou
+ *     de parear e a sessao esta subindo — conectar aqui e o que gera o replaced);
+ *   - trava de tempo por instancia, para que nenhuma aba extra fure a regra.
+ */
+const CONNECT_COOLDOWN_MS = 30_000
+const ultimoConnect = new Map()
+
+function podeConectar(name) {
+  const anterior = ultimoConnect.get(name)
+  return !anterior || Date.now() - anterior >= CONNECT_COOLDOWN_MS
+}
+
+async function conectaUmaVez(config, name, { forcar = false } = {}) {
+  // `forcar` e so para a acao deliberada do lojista (botao "Gerar QR Code"),
+  // que roda uma vez por clique e sempre com a instancia em 'close'. O polling
+  // nunca forca — e a trava que o impede de virar um laco de sockets.
+  if (!forcar && !podeConectar(name)) return null
+  ultimoConnect.set(name, Date.now())
+  return evolution(config, `instance/connect/${name}`)
+}
+
+/** 'open' | 'connecting' | 'close' — 'close' tambem cobre instancia inexistente. */
+async function estadoAtual(config, name) {
+  const data = await evolution(config, `instance/connectionState/${name}`).catch(() => null)
+  return data?.instance?.state ?? data?.state ?? 'close'
+}
+
 function instanceName(tenant) {
   return `wissen-${tenant.slug}`.slice(0, 60)
 }
@@ -178,8 +218,8 @@ router.post(
 
     // A loja pode já ter um WhatsApp pareado (instância criada fora do painel).
     // Nesse caso não faz sentido pedir QR de novo: adotamos a instância existente.
-    const current = await evolution(config, `instance/connectionState/${name}`).catch(() => null)
-    if ((current?.instance?.state ?? current?.state) === 'open') {
+    const estado = await estadoAtual(config, name)
+    if (estado === 'open') {
       const inboxId = channel?.chatwoot_inbox_id ?? (await findInboxId(settings, tenant, channel?.chatwoot_account_id))
       await upsertChannel(tenant.id, {
         evolution_instance: name,
@@ -191,6 +231,16 @@ router.post(
       await db.upsert('tenant_settings', [{ tenant_id: tenant.id, evolution_instance: name }], 'tenant_id')
 
       res.json({ instance: name, status: 'conectado', qrcode: null, inbox_id: inboxId })
+      return
+    }
+
+    // Já existe um socket vivo para esta instância (QR na tela em outra aba, ou
+    // o aparelho acabou de parear e a sessão está subindo). Recriar, reconfigurar
+    // o Chatwoot — que reinicia a instância — ou pedir connect de novo abriria um
+    // SEGUNDO controlador para a mesma sessão, e o WhatsApp derruba o primeiro
+    // com "conflict / replaced". Devolvemos o estado e deixamos o polling seguir.
+    if (estado === 'connecting') {
+      res.json({ instance: name, status: 'aguardando_leitura', qrcode: null, ja_conectando: true })
       return
     }
 
@@ -223,7 +273,13 @@ router.post(
     const inboxName = `wissen-${tenant.slug}`
     const chatwootUrlParaEvolution = escolheUrlDoChatwoot(settings)
 
-    if (channel?.chatwoot_account_id && chatwootUrlParaEvolution && settings?.chatwoot_token) {
+    // chatwoot/set REINICIA a instância na Evolution. Rodar isso numa retentativa
+    // em que a inbox já existe é um restart de graça — e restart no meio de um
+    // pareamento é uma das formas de provocar o "replaced". Só configuramos
+    // quando a instância acabou de nascer ou quando a inbox ainda não existe.
+    const precisaConfigurarChatwoot = Boolean(created) || !channel?.chatwoot_inbox_id
+
+    if (precisaConfigurarChatwoot && channel?.chatwoot_account_id && chatwootUrlParaEvolution && settings?.chatwoot_token) {
       await garanteTokenDeAdmin(settings, channel.chatwoot_account_id)
       await evolution(config, `chatwoot/set/${name}`, {
         method: 'POST',
@@ -242,7 +298,7 @@ router.post(
           autoCreate: true,
         },
       })
-    } else if (channel?.chatwoot_account_id && !settings?.chatwoot_token) {
+    } else if (precisaConfigurarChatwoot && channel?.chatwoot_account_id && !settings?.chatwoot_token) {
       // Falhar aqui é melhor do que entregar uma loja muda: sem essa ligação as
       // mensagens do WhatsApp nunca chegam ao Chatwoot nem ao agente.
       throw new HttpError(
@@ -253,11 +309,9 @@ router.post(
     }
 
     // Agora sim: o QR nasce depois do restart provocado pelo chatwoot/set.
-    let qrcode = null
-    {
-      const connect = await evolution(config, `instance/connect/${name}`)
-      qrcode = readQrCode(connect) ?? readQrCode(created)
-    }
+    // Este é o connect legítimo do fluxo — e o único que o painel dispara.
+    const connect = await conectaUmaVez(config, name, { forcar: true })
+    const qrcode = readQrCode(connect) ?? readQrCode(created)
 
     // A inbox é criada pela Evolution; sem guardar o id aqui a RPC
     // tenant_context(account_id, inbox_id) não acha o tenant e o agente ignora
@@ -306,8 +360,7 @@ router.get(
       return
     }
 
-    const data = await evolution(config, `instance/connectionState/${name}`)
-    const rawState = data?.instance?.state ?? data?.state ?? 'close'
+    const rawState = await estadoAtual(config, name)
 
     if (rawState === 'open') {
       const inboxId = channel?.chatwoot_inbox_id ?? (await findInboxId(settings, tenant, channel?.chatwoot_account_id))
@@ -319,7 +372,18 @@ router.get(
       return
     }
 
-    const connect = await evolution(config, `instance/connect/${name}`).catch(() => null)
+    // 'connecting': o socket está de pé. Esta rota é chamada em laço pelo front,
+    // então aqui ela é SÓ leitura — pedir connect agora é o que criava o segundo
+    // controlador e derrubava a sessão recém-pareada com "conflict / replaced".
+    // O QR que o lojista está vendo veio do POST /instance e continua valendo.
+    if (rawState === 'connecting') {
+      res.json({ instance: name, status: 'aguardando_leitura', qrcode: null })
+      return
+    }
+
+    // 'close': não há socket nenhum. Reconectar aqui é legítimo, mas com a trava
+    // de tempo — senão o polling volta a ser uma fábrica de sockets.
+    const connect = await conectaUmaVez(config, name).catch(() => null)
     res.json({ instance: name, status: 'aguardando_leitura', qrcode: readQrCode(connect) })
   }),
 )
@@ -337,6 +401,7 @@ router.post(
     if (config) {
       await evolution(config, `instance/logout/${name}`, { method: 'DELETE' }).catch(() => undefined)
       await evolution(config, `instance/delete/${name}`, { method: 'DELETE' }).catch(() => undefined)
+      ultimoConnect.delete(name)
     } else {
       simulated.delete(name)
     }
