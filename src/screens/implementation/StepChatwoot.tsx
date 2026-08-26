@@ -26,6 +26,7 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
   const [role, setRole] = useState<SalespersonRole>('agent')
   const [adding, setAdding] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
+  const [reenviando, setReenviando] = useState(false)
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null)
   const [avisos, setAvisos] = useState<string[]>([])
   const [agentesDaCentral, setAgentesDaCentral] = useState<ChatwootAgent[]>([])
@@ -144,6 +145,11 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
       await refresh()
       await carregarAgentes()
 
+      const falharam = (result.convites ?? []).filter((c) => !c.enviado && c.motivo !== 'ja recebeu antes')
+      if (falharam.length) {
+        setAvisos(falharam.map((c) => `Não consegui enviar o e-mail de acesso para ${c.email}: ${c.motivo}`))
+      }
+
       if (result.conflitos?.length) {
         // O e-mail existe em outra conta do mesmo Chatwoot. Não dá para seguir
         // fingindo que a pessoa entrou: ela não receberia conversa nenhuma.
@@ -161,7 +167,12 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
         return
       }
 
-      toast(`Central sincronizada com ${result.users.length} pessoa(s).`)
+      const enviados = (result.convites ?? []).filter((c) => c.enviado).length
+      toast(
+        enviados
+          ? `Central sincronizada. E-mail de acesso enviado para ${enviados} pessoa(s).`
+          : `Central sincronizada com ${result.users.length} pessoa(s).`,
+      )
       onNext()
     } catch (err) {
       setError(
@@ -171,6 +182,45 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
       )
     } finally {
       setSincronizando(false)
+    }
+  }
+
+  /**
+   * O e-mail sai uma vez por pessoa. Quando alguem diz que nao recebeu (ou o
+   * e-mail caiu no spam e foi apagado), este botao manda de novo para todo
+   * mundo — e o unico jeito de a pessoa definir a propria senha e entrar na
+   * central pelo celular dela, fora do painel.
+   */
+  async function reenviarConvites() {
+    if (!tenantId) return
+
+    setReenviando(true)
+    setError(null)
+    setAvisos([])
+
+    try {
+      const result = await provisionChatwoot(tenantId, true)
+      const enviados = (result.convites ?? []).filter((c) => c.enviado)
+      const falharam = (result.convites ?? []).filter((c) => !c.enviado)
+
+      if (falharam.length) {
+        setAvisos(falharam.map((c) => `${c.email}: ${c.motivo ?? 'não enviado'}`))
+      }
+
+      toast(
+        enviados.length
+          ? `E-mail de acesso reenviado para ${enviados.length} pessoa(s).`
+          : 'Ninguém da equipe tem conta na central ainda.',
+        enviados.length ? 'success' : 'info',
+      )
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? { message: err.message, hint: err.hint }
+          : { message: err instanceof Error ? err.message : 'Falha ao reenviar os e-mails.' },
+      )
+    } finally {
+      setReenviando(false)
     }
   }
 
@@ -223,7 +273,7 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
           <p className="mt-1 text-xs text-ink-500">
             {faltaAdmin
               ? 'Comece pelo dono da loja: é a conta que administra a central. Depois de cadastrá-lo, os vendedores são liberados.'
-              : 'Cada pessoa recebe um convite por e-mail do Chatwoot para definir a própria senha.'}
+              : 'Ao clicar em Continuar, cada pessoa da lista recebe um e-mail para definir a própria senha e entrar na central.'}
           </p>
 
           <form onSubmit={addPerson} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -289,6 +339,22 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
               quando transfere uma conversa.
             </p>
           )}
+
+          {provisioned && salespeople.length > 0 && (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <Button
+                variant="ghost"
+                onClick={() => void reenviarConvites()}
+                loading={reenviando}
+                disabled={sincronizando}
+              >
+                Reenviar e-mail de acesso
+              </Button>
+              <span className="text-xs text-ink-400">
+                Não chegou? Peça para conferir o spam — o remetente é o e-mail da sua central.
+              </span>
+            </div>
+          )}
         </section>
 
         {avisos.length > 0 && (
@@ -310,7 +376,8 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
 
         <p className="text-xs text-ink-400">
           A sincronização com o Chatwoot acontece sozinha ao clicar em Continuar, e outra vez quando você conclui a
-          implantação. Usa a chave Super Admin do Chatwoot, guardada apenas no servidor.
+          implantação. Usa a chave Super Admin do Chatwoot, guardada apenas no servidor. O e-mail de acesso sai uma vez
+          por pessoa — quem já recebeu não recebe de novo, a não ser que você reenvie.
         </p>
       </div>
     </StepCard>
