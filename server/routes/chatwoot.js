@@ -2,7 +2,12 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import { db, HttpError, upsertChannel } from '../lib/db.js'
 import { requireTenant, route } from '../lib/auth.js'
-import { ensureAgentWebhook, ensureInboxMembers, listAccountAgents } from '../lib/chatwoot-account.js'
+import {
+  createAccountAgent,
+  ensureAgentWebhook,
+  ensureInboxMembers,
+  listAccountAgents,
+} from '../lib/chatwoot-account.js'
 
 const router = Router()
 
@@ -130,6 +135,13 @@ async function ensureAdminToken(accountId, tenant, existingToken) {
   )
 }
 
+/** Administrador primeiro: e o token dele que abre a API da conta. */
+function ordenaAdminPrimeiro(team) {
+  return [...team].sort(
+    (a, b) => (a.role === 'administrator' ? 0 : 1) - (b.role === 'administrator' ? 0 : 1),
+  )
+}
+
 /**
  * Cria (ou reaproveita) a sub-conta da loja no Chatwoot e garante que cada
  * vendedor cadastrado tenha usuário e acesso à conta.
@@ -168,9 +180,62 @@ router.post(
         )
       }
 
-      // Com um token valido ainda da para deixar a loja funcionando: registra o
-      // webhook e guarda o endereco. So a equipe fica pendente.
+      // Aqui ficava um beco sem saida: o painel registrava o webhook e mandava o
+      // lojista convidar a equipe na mao, entao chatwoot_user_id nunca era
+      // preenchido -- nenhum vendedor aparecia para receber conversa, e o botao
+      // de acesso a central ficava eternamente "pendente".
+      //
+      // A Platform API realmente nao cria usuario numa conta que nao e dela.
+      // Mas o token de administrador DA CONTA cria, pela API da conta -- e o
+      // mesmo caminho da tela "Configuracoes > Agentes". Entao sincronizamos por
+      // ali e a loja fica completa do mesmo jeito.
       const webhookExterno = await ensureAgentWebhook(accountId, tokenInformado)
+
+      const jaSaoAgentes = new Map()
+      for (const agente of await listAccountAgents(accountId, tokenInformado).catch(() => [])) {
+        const chave = String(agente?.email || '').toLowerCase()
+        if (chave) jaSaoAgentes.set(chave, agente)
+      }
+
+      const usersExterno = []
+      const conflitosExterno = []
+
+      for (const person of ordenaAdminPrimeiro(team)) {
+        const email = String(person.email || '').toLowerCase()
+        let userId = jaSaoAgentes.get(email)?.id ?? person.chatwoot_user_id ?? null
+        let invited = false
+
+        if (!userId) {
+          try {
+            const criado = await createAccountAgent(accountId, tokenInformado, {
+              name: person.name,
+              email: person.email,
+              role: person.role,
+            })
+            userId = criado?.id ?? null
+            invited = Boolean(userId)
+          } catch (error) {
+            conflitosExterno.push({
+              nome: person.name,
+              email: person.email,
+              motivo: error.message || 'O Chatwoot recusou este e-mail.',
+            })
+          }
+        }
+
+        if (userId) {
+          await db.update('salespeople', `id=eq.${person.id}`, { chatwoot_user_id: userId })
+        }
+
+        usersExterno.push({ email: person.email, chatwoot_user_id: userId, role: person.role, invited })
+      }
+
+      const inboxExterno = await ensureInboxMembers(
+        accountId,
+        tokenInformado,
+        channel?.chatwoot_inbox_id ?? null,
+        usersExterno.map((u) => u.chatwoot_user_id).filter(Boolean),
+      ).catch(() => null)
 
       await upsertChannel(tenant.id, { chatwoot_account_id: accountId, ativo: true })
 
@@ -182,9 +247,10 @@ router.post(
 
       res.json({
         account_id: accountId,
-        users: [],
+        users: usersExterno,
+        conflitos: conflitosExterno,
         webhook: webhookExterno,
-        warning: 'A central #' + accountId + ' foi criada fora do painel: o webhook do agente foi registrado e a IA ja atende, mas a equipe precisa ser convidada direto no Chatwoot em Configuracoes > Agentes.',
+        inbox: inboxExterno,
       })
       return
     }
@@ -192,9 +258,7 @@ router.post(
     // O administrador (dono da loja) vem primeiro: e o token dele que abre a API
     // da conta para tudo que vem depois. Processar um vendedor antes fazia o
     // painel guardar um token sem permissao de administrador.
-    const ordenado = [...team].sort(
-      (a, b) => (a.role === 'administrator' ? 0 : 1) - (b.role === 'administrator' ? 0 : 1),
-    )
+    const ordenado = ordenaAdminPrimeiro(team)
 
     // Quem ja e agente desta central, por e-mail. Serve para reaproveitar o
     // usuario em vez de tentar cria-lo de novo (e levar 422 a toa).
