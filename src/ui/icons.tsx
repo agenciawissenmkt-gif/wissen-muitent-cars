@@ -144,3 +144,23 @@ export const GoogleIcon = (p: IconProps) => (
     />
   </svg>
 )
+
+/**
+ * Marca do Chatwoot: balão de conversa arredondado no azul da ferramenta.
+ * Desenhado aqui (não é o arquivo oficial deles) para o botão ficar
+ * reconhecível sem depender de um asset externo.
+ */
+export const ChatwootMark = (p: IconProps) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    aria-hidden="true"
+    {...p}
+    className={`size-6 ${p.className ?? ''}`}
+  >
+    <path
+      d="M12 3.2c-4.86 0-8.8 3.53-8.8 7.88 0 2.48 1.28 4.7 3.29 6.14v3.06c0 .43.48.68.84.44l2.74-1.86c.62.12 1.27.19 1.93.19 4.86 0 8.8-3.53 8.8-7.97S16.86 3.2 12 3.2Z"
+      fill="currentColor"
+    />
+  </svg>
+)
