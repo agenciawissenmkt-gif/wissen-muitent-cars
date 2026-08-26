@@ -330,4 +330,61 @@ router.get(
   }),
 )
 
+/**
+ * Link de acesso direto a conta de uma pessoa da equipe.
+ *
+ * O Chatwoot so entra numa conta com a senha do dono dela. A excecao e o
+ * endpoint de SSO da Platform API, que devolve um link de uso unico ja
+ * autenticado -- e a chave Super Admin que abre essa porta.
+ *
+ * Duas travas importantes aqui:
+ *
+ * 1. So geramos link para alguem que esta em `salespeople` DESTA loja. O id
+ *    vem do navegador, entao ele nunca pode virar "me da um link para o
+ *    usuario 42 do Chatwoot": a consulta filtra por tenant_id junto.
+ * 2. O link nunca passa pelo banco nem por log. Ele nasce nesta resposta,
+ *    e o navegador usa na hora.
+ *
+ * Vale dizer o que isso significa na pratica: quem abre o painel da loja entra
+ * na conta de qualquer pessoa da equipe sem senha. Foi uma escolha consciente
+ * do dono do produto, trocando isolamento por conveniencia.
+ */
+router.post(
+  '/sso',
+  route(async (req, res) => {
+    const { tenant } = await requireTenant(req)
+    const salespersonId = String(req.body?.salesperson_id || '').trim()
+
+    if (!salespersonId) {
+      throw new HttpError(400, 'Informe de quem e o acesso.')
+    }
+
+    const person = await db.selectOne(
+      'salespeople',
+      `id=eq.${encodeURIComponent(salespersonId)}&tenant_id=eq.${tenant.id}&select=*`,
+    )
+
+    if (!person) {
+      throw new HttpError(404, 'Essa pessoa nao faz parte da equipe desta loja.')
+    }
+
+    if (!person.chatwoot_user_id) {
+      throw new HttpError(
+        400,
+        `${person.name} ainda nao tem conta na central.`,
+        'Va em Implementacao > etapa 3 e clique em Continuar para sincronizar a equipe com o Chatwoot.',
+      )
+    }
+
+    const data = await platform(`users/${person.chatwoot_user_id}/login`)
+    const url = data?.url ?? data?.payload?.url ?? null
+
+    if (!url) {
+      throw new HttpError(502, 'O Chatwoot nao devolveu o link de acesso.')
+    }
+
+    res.json({ url, name: person.name })
+  }),
+)
+
 export default router
