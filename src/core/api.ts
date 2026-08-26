@@ -94,6 +94,17 @@ export function chatwootTeam(tenantId: string) {
   return request<{ agents: ChatwootAgent[] }>(`/chatwoot/team?tenant_id=${encodeURIComponent(tenantId)}`)
 }
 
+/**
+ * Link de uso único que entra direto na conta daquela pessoa no Chatwoot.
+ * Gerado no servidor com a chave Super Admin — nunca chega ao navegador.
+ */
+export function chatwootSsoUrl(tenantId: string, salespersonId: string) {
+  return request<{ url: string; name: string }>('/chatwoot/sso', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId, salesperson_id: salespersonId }),
+  })
+}
+
 // --- Evolution API (WhatsApp) ----------------------------------------------
 
 export interface EvolutionState {
