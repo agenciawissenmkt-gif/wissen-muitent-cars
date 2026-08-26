@@ -56,7 +56,10 @@ export interface Store {
   payment_methods: string[]
   differentials: string | null
   service_notes: string | null
+  /** A semana da loja. Use `normalizaHorario` de `core/business-hours` para ler. */
   business_hours: unknown
+  /** A mesma semana em português, pronta para o prompt e para a base de conhecimento. */
+  business_hours_text: string | null
   timezone: string
   onboarding_step: OnboardingStep
   created_at: string
