@@ -122,3 +122,20 @@ export async function ensureInboxMembers(accountId, token, inboxId, userIds) {
 
   return { inbox_id: inboxId, membros: uniao.length, alterado: true }
 }
+
+/**
+ * Convida alguem como agente pela API da CONTA (nao pela Platform API).
+ *
+ * E o mesmo caminho da tela "Configuracoes > Agentes" do Chatwoot, e o unico
+ * que funciona quando a conta nao foi criada por este painel -- ali o Platform
+ * App nao tem permissao para criar usuario. O Chatwoot manda o convite por
+ * e-mail para a pessoa definir a propria senha.
+ */
+export async function createAccountAgent(accountId, token, { name, email, role }) {
+  const data = await accountApi(accountId, 'agents', {
+    method: 'POST',
+    token,
+    body: { name, email, role },
+  })
+  return data?.id ? data : (data?.payload ?? data)
+}
