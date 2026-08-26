@@ -6,6 +6,7 @@ import {
   createAccountAgent,
   ensureAgentWebhook,
   ensureInboxMembers,
+  enviarEmailDeAcesso,
   listAccountAgents,
 } from '../lib/chatwoot-account.js'
 
@@ -143,6 +144,57 @@ function ordenaAdminPrimeiro(team) {
 }
 
 /**
+ * Manda o e-mail de acesso a central para cada pessoa da equipe.
+ *
+ * Esta e a resposta ao "cadastrei o vendedor e o e-mail nao chegou". Nao havia
+ * bug de SMTP: o Chatwoot simplesmente nao tinha o que mandar. Quando o painel
+ * administra a central, o usuario nasce pela Platform API com
+ * `confirmed: true` -- e a confirmacao do Devise, que e o unico e-mail que o
+ * Chatwoot dispara sozinho nesse momento, so vai para quem ainda precisa
+ * confirmar. Nas centrais criadas por fora e parecido: quem ja tinha conta e
+ * adicionado em silencio.
+ *
+ * Duas travas:
+ *
+ * 1. So mandamos para quem realmente ficou com conta (`chatwoot_user_id`).
+ *    Mandar para quem caiu em conflito seria prometer um acesso que nao existe.
+ * 2. `convite_enviado_em` impede o reenvio automatico. A etapa 3 sincroniza no
+ *    Continuar e de novo ao concluir a implantacao -- sem esta marca, cada
+ *    vendedor levaria dois e-mails iguais. Reenvio so quando alguem pede.
+ */
+async function mandaConvites(team, users, { reenviar = false } = {}) {
+  const comConta = new Set(
+    users.filter((u) => u.chatwoot_user_id).map((u) => String(u.email || '').toLowerCase()),
+  )
+
+  const convites = []
+
+  for (const person of team) {
+    const email = String(person.email || '').toLowerCase()
+    if (!comConta.has(email)) continue
+
+    if (person.convite_enviado_em && !reenviar) {
+      convites.push({ email, enviado: false, motivo: 'ja recebeu antes' })
+      continue
+    }
+
+    try {
+      await enviarEmailDeAcesso(person.email)
+      await db.update('salespeople', `id=eq.${person.id}`, {
+        convite_enviado_em: new Date().toISOString(),
+      })
+      convites.push({ email, enviado: true })
+    } catch (error) {
+      // Um e-mail que nao sai nao pode derrubar a etapa: a conta ja existe e o
+      // acesso direto da Visao Geral continua funcionando.
+      convites.push({ email, enviado: false, motivo: error.message || 'Falha ao enviar.' })
+    }
+  }
+
+  return convites
+}
+
+/**
  * Cria (ou reaproveita) a sub-conta da loja no Chatwoot e garante que cada
  * vendedor cadastrado tenha usuário e acesso à conta.
  */
@@ -151,6 +203,7 @@ router.post(
   route(async (req, res) => {
     const { tenant, settings } = await requireTenant(req)
     const { baseUrl } = chatwootConfig()
+    const reenviar = Boolean(req.body?.reenviar_convites)
 
     const channel = await db.selectOne('tenant_channels', `tenant_id=eq.${tenant.id}&select=*`)
     const team = await db.select('salespeople', `tenant_id=eq.${tenant.id}&select=*&order=created_at`)
@@ -245,12 +298,15 @@ router.post(
         await db.upsert('tenant_settings', [patchExterno], 'tenant_id')
       }
 
+      const convitesExterno = await mandaConvites(team, usersExterno, { reenviar })
+
       res.json({
         account_id: accountId,
         users: usersExterno,
         conflitos: conflitosExterno,
         webhook: webhookExterno,
         inbox: inboxExterno,
+        convites: convitesExterno,
       })
       return
     }
@@ -361,7 +417,9 @@ router.post(
       idsDaEquipe,
     ).catch(() => null)
 
-    res.json({ account_id: accountId, users, conflitos, webhook, inbox })
+    const convites = await mandaConvites(team, users, { reenviar })
+
+    res.json({ account_id: accountId, users, conflitos, webhook, inbox, convites })
   }),
 )
 
