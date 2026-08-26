@@ -73,12 +73,19 @@ export interface ChatwootProvisionResult {
   conflitos?: { nome: string; email: string; motivo: string }[]
   /** Preenchido quando a central existe mas não pode ser administrada pelo painel. */
   warning?: string
+  /** E-mail de acesso à central, uma linha por pessoa da equipe. */
+  convites?: { email: string; enviado: boolean; motivo?: string }[]
 }
 
-export function provisionChatwoot(tenantId: string) {
+/**
+ * `reenviarConvites` força um novo e-mail de acesso para toda a equipe. Sem
+ * ele, cada pessoa recebe uma vez só — a etapa 3 provisiona no Continuar e de
+ * novo ao concluir a implantação, e ninguém quer o mesmo e-mail duas vezes.
+ */
+export function provisionChatwoot(tenantId: string, reenviarConvites = false) {
   return request<ChatwootProvisionResult>('/chatwoot/provision', {
     method: 'POST',
-    body: JSON.stringify({ tenant_id: tenantId }),
+    body: JSON.stringify({ tenant_id: tenantId, reenviar_convites: reenviarConvites }),
   })
 }
 
