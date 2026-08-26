@@ -9,6 +9,13 @@ import {
   type AgentType,
   type InspectionType,
 } from '../../core/types'
+import {
+  DIAS_DA_SEMANA,
+  HORARIO_PADRAO,
+  descreveHorario,
+  normalizaHorario,
+  type DiaDeFuncionamento,
+} from '../../core/business-hours'
 import { Button } from '../../ui/Button'
 import { CheckPill, Field, Input, Select, Textarea, Toggle } from '../../ui/Field'
 import { useToast } from '../../ui/Feedback'
@@ -67,6 +74,9 @@ export function StepRules({ onNext }: { onNext: () => void }) {
   const [uf, setUf] = useState('')
   const [zip, setZip] = useState('')
   const [mapsUrl, setMapsUrl] = useState('')
+
+  // --- Horário de funcionamento da loja (a porta aberta, não a Júlia)
+  const [semana, setSemana] = useState<DiaDeFuncionamento[]>(HORARIO_PADRAO)
 
   // --- Horário
   const [mode, setMode] = useState<'24h' | 'custom'>('24h')
@@ -136,6 +146,8 @@ export function StepRules({ onNext }: { onNext: () => void }) {
 
     setDifferentials(store.differentials ?? '')
     setServiceNotes(store.service_notes ?? '')
+
+    setSemana(normalizaHorario(store.business_hours))
   }, [store?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -149,6 +161,20 @@ export function StepRules({ onNext }: { onNext: () => void }) {
       setMode('24h')
     }
   }, [settings?.tenant_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function mudaDia(dia: number, patch: Partial<DiaDeFuncionamento>) {
+    setSemana((atual) => atual.map((d) => (d.dia === dia ? { ...d, ...patch } : d)))
+  }
+
+  /**
+   * A maioria das lojas repete o mesmo horário de segunda a sexta. Sem isto,
+   * preencher a semana é abrir e fechar dez campos de hora na mão.
+   */
+  function repetirNaSemana() {
+    setSemana((atual) =>
+      atual.map((d) => (d.dia >= 1 && d.dia <= 4 ? { ...d, aberto: atual[0].aberto, abre: atual[0].abre, fecha: atual[0].fecha } : d)),
+    )
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
@@ -200,6 +226,11 @@ export function StepRules({ onNext }: { onNext: () => void }) {
 
         differentials: differentials.trim() || null,
         service_notes: serviceNotes.trim() || null,
+
+        // A frase vai junto do JSON: é ela que o prompt e a base de
+        // conhecimento leem, sem precisar remontar português no Postgres.
+        business_hours: semana,
+        business_hours_text: descreveHorario(semana),
       })
 
       if (tenant && tenant.nome !== name.trim()) {
@@ -363,8 +394,63 @@ export function StepRules({ onNext }: { onNext: () => void }) {
           </Section>
 
           <Section
-            title="Horário de atendimento"
-            hint="Fora do horário, a IA continua respondendo — ela só avisa que um vendedor humano retorna no próximo expediente."
+            title="Horário de funcionamento da loja"
+            hint="Quando a loja está aberta de verdade. É o que a IA responde para quem pergunta “que horas vocês abrem?” ou “vocês abrem sábado?” — e é com base nisto que ela marca visita e test-drive."
+          >
+            <div className="divide-y divide-ink-100 rounded-2xl border border-ink-100">
+              {semana.map((d) => (
+                <div
+                  key={d.dia}
+                  className="grid items-center gap-3 px-4 py-3 sm:grid-cols-[10rem_7rem_1fr]"
+                >
+                  <span className="text-sm font-semibold text-ink-900">{DIAS_DA_SEMANA[d.dia]}</span>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-ink-500">
+                    <input
+                      type="checkbox"
+                      checked={d.aberto}
+                      onChange={(e) => mudaDia(d.dia, { aberto: e.target.checked })}
+                      className="size-4 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+                    />
+                    {d.aberto ? 'Aberto' : 'Fechado'}
+                  </label>
+                  {d.aberto ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="time"
+                        value={d.abre}
+                        onChange={(e) => mudaDia(d.dia, { abre: e.target.value })}
+                        aria-label={`Abre ${DIAS_DA_SEMANA[d.dia]}`}
+                        className="rounded-2xl border border-ink-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
+                      />
+                      <span className="text-xs text-ink-400">às</span>
+                      <input
+                        type="time"
+                        value={d.fecha}
+                        onChange={(e) => mudaDia(d.dia, { fecha: e.target.value })}
+                        aria-label={`Fecha ${DIAS_DA_SEMANA[d.dia]}`}
+                        className="rounded-2xl border border-ink-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
+                      />
+                    </div>
+                  ) : (
+                    <span className="text-xs text-ink-400">A loja não abre neste dia.</span>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <Button type="button" variant="ghost" onClick={repetirNaSemana}>
+                Repetir a segunda até sexta
+              </Button>
+              <p className="text-xs text-ink-500">
+                A IA vai dizer assim: <span className="font-semibold text-ink-900">{descreveHorario(semana)}.</span>
+              </p>
+            </div>
+          </Section>
+
+          <Section
+            title="Horário de atendimento da Júlia"
+            hint="Diferente do horário acima: aqui é quando a IA considera que tem gente na loja. Fora dele ela continua respondendo — só avisa que um vendedor humano retorna no próximo expediente."
           >
             <div className="grid gap-3 sm:grid-cols-2">
               <Toggle
