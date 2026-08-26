@@ -139,3 +139,32 @@ export async function createAccountAgent(accountId, token, { name, email, role }
   })
   return data?.id ? data : (data?.payload ?? data)
 }
+
+/**
+ * Manda para a pessoa o e-mail de acesso a central.
+ *
+ * Por que nao deixamos o proprio Chatwoot convidar? Porque na maior parte dos
+ * casos ele nao convida. Quando o painel administra a central, o usuario e
+ * criado pela Platform API com `confirmed: true` -- e usuario ja confirmado
+ * nunca recebe o convite do Devise. E mesmo no caminho da API da conta, quem ja
+ * tinha conta no Chatwoot e apenas adicionado em silencio.
+ *
+ * `/auth/password` e publico e serve exatamente para isso: o Chatwoot manda um
+ * e-mail com um link para a pessoa definir a propria senha, exista ela ha um
+ * minuto ou ha um ano. E a resposta e sempre 200 e generica ("se existir,
+ * enviaremos"), entao ela nunca revela se aquele e-mail tem conta -- por isso
+ * so tratamos erro de rede aqui.
+ */
+export async function enviarEmailDeAcesso(email) {
+  const res = await fetch(`${publicBaseUrl()}/auth/password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  })
+
+  if (!res.ok) {
+    throw new HttpError(502, `O Chatwoot recusou o envio para ${email} (${res.status}).`)
+  }
+
+  return true
+}
