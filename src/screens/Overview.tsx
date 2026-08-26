@@ -4,6 +4,7 @@ import { motion } from 'framer-motion'
 import { useTenant } from '../core/tenant'
 import { formatBRL, formatBRLCompact } from '../core/format'
 import { useCars } from './inventory/useCars'
+import { CentralDaLoja } from './overview/CentralDaLoja'
 import { Button } from '../ui/Button'
 import { StatusBadge } from '../ui/Feedback'
 import { CalendarIcon, CarIcon, ChatIcon, MoneyIcon, SparkIcon, WhatsappIcon } from '../ui/icons'
@@ -106,6 +107,8 @@ export function Overview() {
           delay={0.15}
         />
       </div>
+
+      <CentralDaLoja />
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1.35fr_1fr]">
         <section className="rounded-3xl border border-ink-100 bg-white p-6 shadow-sm">
