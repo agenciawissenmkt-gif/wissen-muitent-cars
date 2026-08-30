@@ -24,6 +24,33 @@ import { InfoNote, StepCard } from './StepCard'
 // leitura pura, 5 s é folgado e ainda parece instantâneo para o lojista.
 const POLL_INTERVAL = 5000
 
+// O WhatsApp nao autoriza este tipo de automacao. Nao existe configuracao que
+// deixe um numero imune -- o que existe e um perfil de numero que quase nunca e
+// banido e outro que e banido em dias. A diferenca esta nestas quatro coisas, e
+// ate hoje o painel nao falava nenhuma delas: mostrava o QR e pronto.
+const REGRAS_DO_NUMERO = [
+  {
+    id: 'nao-e-chip-novo',
+    titulo: 'Este numero nao e um chip novo.',
+    porque: 'Ja e usado ha algumas semanas e tem conversa de verdade no historico. Numero recem-registrado que comeca a responder sozinho e o que mais chama atencao.',
+  },
+  {
+    id: 'nao-e-pessoal',
+    titulo: 'Este numero nao e o WhatsApp pessoal de ninguem.',
+    porque: 'E um numero da loja. Se o pior acontecer, voce perde um numero de trabalho e nao o contato da familia de alguem.',
+  },
+  {
+    id: 'nao-esta-em-outro-lugar',
+    titulo: 'Este numero nao esta ligado em nenhum outro sistema.',
+    porque: 'Nenhum outro painel, robo ou disparador usando o mesmo WhatsApp. O mesmo numero conectado em dois lugares e o sinal mais facil de detectar.',
+  },
+  {
+    id: 'sem-disparo',
+    titulo: 'A loja nao vai disparar mensagem em massa por aqui.',
+    porque: 'A Julia responde quem escreve primeiro; ela nao sai puxando conversa com lista de contatos. Denuncia de quem nao conhece o numero e o gatilho mais rapido de bloqueio.',
+  },
+]
+
 const INSTRUCTIONS = [
   'Abra o WhatsApp no celular que vai atender os clientes.',
   'Toque em Configurações › Dispositivos conectados › Conectar dispositivo.',
@@ -43,6 +70,9 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<{ message: string; hint?: string } | null>(null)
   const [finishing, setFinishing] = useState(false)
   const celebratedRef = useRef(false)
+  const [marcadas, setMarcadas] = useState<string[]>([])
+
+  const todasMarcadas = REGRAS_DO_NUMERO.every((r) => marcadas.includes(r.id))
 
   const connected =
     state?.status === 'conectado' ||
@@ -132,6 +162,8 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
     setError(null)
     try {
       await updateSettings({ bot_phone: toWhatsappNumber(digits) })
+      // registro de que o lojista foi avisado, e data do vinculo deste numero
+      await updateStore({ whatsapp_checklist_em: new Date().toISOString() }).catch(() => undefined)
       const next = await createWhatsappInstance(tenantId)
       setState(next)
       if (next.status === 'conectado') void finish()
@@ -151,6 +183,7 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
     celebratedRef.current = false
     await disconnectWhatsapp(tenantId).catch(() => undefined)
     setState(null)
+    setMarcadas([])
     await refresh()
   }
 
@@ -196,6 +229,43 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
       }
     >
       <div className="space-y-6">
+        {!state && (
+          <div className="rounded-3xl border border-amber-200 bg-amber-50/70 p-6">
+            <h3 className="text-sm font-extrabold text-amber-900">Antes de ler o QR Code</h3>
+            <p className="mt-2 text-sm leading-relaxed text-amber-800">
+              O WhatsApp não autoriza oficialmente este tipo de automação. Não existe ajuste que deixe um número imune —
+              o que existe é um perfil de número que quase nunca é banido, e outro que é banido em dias.{' '}
+              <strong>Número banido não volta.</strong> Confirme as quatro para continuar.
+            </p>
+
+            <ul className="mt-5 space-y-3">
+              {REGRAS_DO_NUMERO.map((regra) => {
+                const marcada = marcadas.includes(regra.id)
+                return (
+                  <li key={regra.id}>
+                    <label className="flex cursor-pointer gap-3 rounded-2xl bg-white/70 p-3 transition hover:bg-white">
+                      <input
+                        type="checkbox"
+                        checked={marcada}
+                        onChange={(e) =>
+                          setMarcadas((atual) =>
+                            e.target.checked ? [...atual, regra.id] : atual.filter((id) => id !== regra.id),
+                          )
+                        }
+                        className="mt-0.5 size-4 shrink-0 accent-amber-600"
+                      />
+                      <span>
+                        <span className="block text-sm font-bold text-ink-900">{regra.titulo}</span>
+                        <span className="mt-0.5 block text-xs leading-relaxed text-ink-500">{regra.porque}</span>
+                      </span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        )}
+
         <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
           <Input
             label="Número do WhatsApp da loja"
@@ -205,7 +275,12 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
             hint="É o número que vai receber as mensagens dos clientes."
             disabled={Boolean(state)}
           />
-          <Button onClick={() => void start()} loading={starting} disabled={Boolean(state)} icon={<WhatsappIcon className="size-4" />}>
+          <Button
+            onClick={() => void start()}
+            loading={starting}
+            disabled={Boolean(state) || !todasMarcadas}
+            icon={<WhatsappIcon className="size-4" />}
+          >
             Gerar QR Code
           </Button>
         </div>
