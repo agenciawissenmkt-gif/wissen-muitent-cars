@@ -4,7 +4,13 @@ import { useTenant } from '../../core/tenant'
 
 const REFRESH_INTERVAL = 60_000
 
-type Situacao = 'conectado' | 'instavel' | 'fora_do_ar' | 'sem_instancia' | 'nunca_checado'
+type Situacao =
+  | 'conectado'
+  | 'instavel'
+  | 'fora_do_ar'
+  | 'provavel_banimento'
+  | 'sem_instancia'
+  | 'nunca_checado'
 
 interface MonitorRow {
   instancia: string | null
@@ -43,6 +49,12 @@ const APARENCIA: Record<Situacao, { rotulo: string; ponto: string; caixa: string
     ponto: 'bg-red-500',
     caixa: 'border-red-200 bg-red-50',
     texto: 'text-red-700',
+  },
+  provavel_banimento: {
+    rotulo: 'Provável banimento do número',
+    ponto: 'bg-red-600',
+    caixa: 'border-red-300 bg-red-50',
+    texto: 'text-red-800',
   },
   sem_instancia: {
     rotulo: 'WhatsApp não conectado',
@@ -89,6 +101,8 @@ function explicacao(linha: MonitorRow): string {
       return `A Evolution respondeu "${linha.estado ?? 'sem estado'}" nas últimas ${linha.quedas_seguidas ?? 0} verificações. Estamos tentando reconectar sozinhos.`
     case 'fora_do_ar':
       return `Sem conexão ${haQuantoTempo(linha.desde)}. A reconexão automática já foi acionada; se não voltar, refaça a Etapa 4 e leia o QR Code de novo.`
+    case 'provavel_banimento':
+      return `Sem conexão ${haQuantoTempo(linha.desde)}, e as tentativas automáticas de reconectar já pararam. Isso deixou de ser uma queda passageira. Abra o WhatsApp no celular da loja: se ele pedir o número de novo, ou disser que a conta foi desconectada, o número foi banido — e aí ler o QR Code outra vez não resolve. Se o WhatsApp abrir normalmente, foi só o celular fora do ar: refaça a Etapa 4.`
     case 'sem_instancia':
       return 'Não existe conexão ativa para esta loja na Evolution. Vá até a Etapa 4 e conecte o WhatsApp.'
     default:
