@@ -61,6 +61,8 @@ export interface Store {
   /** A mesma semana em português, pronta para o prompt e para a base de conhecimento. */
   business_hours_text: string | null
   timezone: string
+  /** Quando o lojista confirmou o checklist de risco do número, na etapa do WhatsApp. */
+  whatsapp_checklist_em: string | null
   onboarding_step: OnboardingStep
   created_at: string
 }
