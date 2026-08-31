@@ -216,6 +216,21 @@ router.post(
     if (!accountId) {
       const account = await platform('accounts', { method: 'POST', body: { name: tenant.nome } })
       accountId = account.id
+
+      // Gravar AGORA, nao no fim da rota.
+      //
+      // Entre criar a conta e o upsertChannel do final existem ~170 linhas que
+      // podem estourar: criacao de usuario, vinculo, convite, o token de admin,
+      // e o teto de 30s da funcao na Vercel (cada vendedor custa de 3 a 5
+      // chamadas em serie -- uma loja com 8 vendedores bate nisso).
+      //
+      // Quando estourava, nada tinha sido gravado: o lojista clicava
+      // "Continuar" de novo, esta linha via accountId nulo e criava uma SEGUNDA
+      // conta inteira no Chatwoot. A primeira ficava orfa para sempre, com os
+      // usuarios dentro. Cinco tentativas, cinco contas.
+      //
+      // Persistir aqui transforma "duplica tudo" em "retoma de onde parou".
+      await upsertChannel(tenant.id, { chatwoot_account_id: accountId, ativo: false })
     } else if (!(await canManageAccount(accountId))) {
       // Central criada fora do painel: o Platform App nao pode criar usuarios
       // nela. Antes isto respondia 200 com um aviso discreto e parava no meio,

@@ -33,9 +33,21 @@ const SIMULATE = process.env.WISSEN_SIMULATE === 'true'
 const SIMULATED_CONNECT_MS = 12_000
 const simulated = new Map()
 
-/** A URL da Evolution pode vir das configurações da loja ou do ambiente. */
-function evolutionConfig(settings) {
-  const baseUrl = (settings?.evolution_base_url || process.env.EVOLUTION_API_URL || '').replace(/\/$/, '')
+/**
+ * A URL da Evolution vem SEMPRE do ambiente, nunca do banco.
+ *
+ * `tenant_settings` e escrita pelo navegador do lojista (a policy do Supabase
+ * libera todas as colunas para o dono da loja). Ler `evolution_base_url` de la
+ * e mandar a EVOLUTION_API_KEY -- que e a chave global da instalacao, a mesma
+ * do /manager -- significa entregar a chave para qualquer endereco que o
+ * lojista escrever. Com ela da para ler, enviar e apagar as instancias de
+ * WhatsApp de todos os outros lojistas.
+ *
+ * O `chatwoot-account.js` ja fazia certo; aqui o parametro `settings` fica so
+ * para nao mudar as chamadas, e e deliberadamente ignorado.
+ */
+function evolutionConfig() {
+  const baseUrl = (process.env.EVOLUTION_API_URL || '').replace(/\/$/, '')
   const apiKey = (process.env.EVOLUTION_API_KEY || '').trim()
 
   if (!baseUrl || !apiKey) {
@@ -43,7 +55,7 @@ function evolutionConfig(settings) {
     throw new HttpError(
       501,
       'Evolution API não configurada.',
-      'Defina EVOLUTION_API_KEY em server/.env (a URL pode vir de tenant_settings.evolution_base_url) — ou WISSEN_SIMULATE=true para testar o fluxo sem WhatsApp real.',
+      'Defina EVOLUTION_API_URL e EVOLUTION_API_KEY em server/.env — ou WISSEN_SIMULATE=true para testar o fluxo sem WhatsApp real.',
     )
   }
 
@@ -112,10 +124,26 @@ async function conectaUmaVez(config, name, { forcar = false } = {}) {
   return evolution(config, `instance/connect/${name}`)
 }
 
-/** 'open' | 'connecting' | 'close' — 'close' tambem cobre instancia inexistente. */
+/**
+ * 'open' | 'connecting' | 'close' | 'desconhecido'.
+ *
+ * 'close' cobre instancia inexistente (404). Qualquer OUTRA falha -- 502 da
+ * Evolution, timeout, DNS -- devolve 'desconhecido', e nao 'close'.
+ *
+ * A diferenca nao e cosmetica. Tratar um soluco de dois segundos como "nao
+ * existe socket" fazia o POST /instance reiniciar a instancia e forcar connect
+ * numa sessao viva: o WhatsApp derruba a antiga com conflict/replaced e a loja
+ * perde o WhatsApp no meio do expediente. Era todo o cuidado do connect sendo
+ * anulado por um catch.
+ */
 async function estadoAtual(config, name) {
-  const data = await evolution(config, `instance/connectionState/${name}`).catch(() => null)
-  return data?.instance?.state ?? data?.state ?? 'close'
+  try {
+    const data = await evolution(config, `instance/connectionState/${name}`)
+    return data?.instance?.state ?? data?.state ?? 'close'
+  } catch (erro) {
+    const naoExiste = /HTTP 404/.test(String(erro?.hint || '')) || /not found|does not exist/i.test(String(erro?.message || ''))
+    return naoExiste ? 'close' : 'desconhecido'
+  }
 }
 
 function instanceName(tenant) {
@@ -271,6 +299,17 @@ router.post(
     // A loja pode já ter um WhatsApp pareado (instância criada fora do painel).
     // Nesse caso não faz sentido pedir QR de novo: adotamos a instância existente.
     const estado = await estadoAtual(config, name)
+
+    // Sem saber o estado, nao se mexe. Recriar e forcar connect por cima de uma
+    // sessao que talvez esteja viva e o que derruba a loja com conflict/replaced.
+    if (estado === 'desconhecido') {
+      throw new HttpError(
+        503,
+        'Não consegui falar com o WhatsApp agora.',
+        'A Evolution API não respondeu ao checar a conexão. Nada foi alterado — tente de novo em alguns segundos.',
+      )
+    }
+
     if (estado === 'open') {
       const inboxId = channel?.chatwoot_inbox_id ?? (await findInboxId(settings, tenant, channel?.chatwoot_account_id))
       await upsertChannel(tenant.id, {
@@ -442,7 +481,12 @@ router.get(
     // então aqui ela é SÓ leitura — pedir connect agora é o que criava o segundo
     // controlador e derrubava a sessão recém-pareada com "conflict / replaced".
     // O QR que o lojista está vendo veio do POST /instance e continua valendo.
-    if (rawState === 'connecting') {
+    //
+    // 'desconhecido' entra aqui de proposito: a Evolution nao respondeu, entao
+    // nao da para afirmar que o socket caiu. Este laco roda a cada 5 segundos --
+    // se a instancia realmente estiver 'close', a proxima volta descobre e
+    // reconecta. Chutar 'close' aqui e o que derruba sessao viva.
+    if (rawState === 'connecting' || rawState === 'desconhecido') {
       res.json({ instance: name, status: 'aguardando_leitura', qrcode: null })
       return
     }

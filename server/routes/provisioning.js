@@ -26,7 +26,15 @@ router.post(
       store_name: store.name,
       owner_email: user.email,
       bot_phone: settings?.bot_phone ?? channel?.whatsapp_number ?? null,
-      google_calendar_id: google?.calendar_id ?? settings?.google_calendar_id ?? 'primary',
+      // Sem credencial gravada, o valor honesto e `null` -- nao 'primary'.
+      //
+      // 'primary' e uma agenda que existe para todo mundo, entao o payload
+      // afirmava que a loja tinha agenda mesmo quando o lojista pulou a etapa 2.
+      // O agente entrava no ar oferecendo visita e test-drive contra uma agenda
+      // para a qual nao existe token, e todo agendamento falhava na frente do
+      // cliente. `null` deixa o fluxo saber que agendar nao e uma opcao.
+      google_calendar_id: google?.calendar_id ?? settings?.google_calendar_id ?? null,
+      agenda_conectada: Boolean(google?.calendar_id ?? settings?.google_calendar_id),
       prompt_descoberta: prompt('descoberta'),
       prompt_encantamento: prompt('encantamento'),
       prompt_fechamento: prompt('fechamento'),
