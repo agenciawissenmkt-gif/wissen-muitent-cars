@@ -47,6 +47,45 @@ function horaValida(valor: unknown, padrao: string) {
   return typeof valor === 'string' && /^\d{2}:\d{2}$/.test(valor) ? valor : padrao
 }
 
+/** A loja já tem horário escolhido, ou o que está na tela é só o padrão? */
+export function temHorarioEscolhido(valor: unknown): boolean {
+  return Array.isArray(valor) && valor.length > 0
+}
+
+/**
+ * Confere a semana antes de salvar.
+ *
+ * A frase gerada aqui é repetida literalmente pela Júlia para todo cliente que
+ * pergunta que horas a loja abre, e é ela que decide se uma visita pode ser
+ * marcada num horário. Salvar "das 18h às 9h" ou um campo em branco não é um
+ * detalhe de formulário: vira informação errada na frente do cliente.
+ *
+ * Um campo de hora apagado devolve string vazia, que `normalizaHorario` troca
+ * pelo padrão 09:00 — ou seja, sem esta checagem o texto salvo afirmaria um
+ * horário que o lojista nunca digitou.
+ */
+export function validaHorario(semana: DiaDeFuncionamento[]): string | null {
+  const abertos = semana.filter((d) => d.aberto)
+
+  if (!abertos.length) {
+    return 'Marque pelo menos um dia em que a loja abre.'
+  }
+
+  for (const dia of abertos) {
+    const nome = DIAS_DA_SEMANA[dia.dia]
+
+    if (!/^\d{2}:\d{2}$/.test(dia.abre) || !/^\d{2}:\d{2}$/.test(dia.fecha)) {
+      return `Preencha o horário de abertura e de fechamento de ${nome.toLowerCase()}.`
+    }
+
+    if (dia.abre >= dia.fecha) {
+      return `Em ${nome.toLowerCase()}, o horário de fechar (${dia.fecha}) precisa ser depois do de abrir (${dia.abre}).`
+    }
+  }
+
+  return null
+}
+
 /**
  * O que vem do banco pode ser o `[]` do default, um array antigo com outro
  * formato, ou já a semana certa. Em qualquer caso sai uma semana de sete dias
