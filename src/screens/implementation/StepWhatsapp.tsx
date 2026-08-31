@@ -74,21 +74,36 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
 
   const todasMarcadas = REGRAS_DO_NUMERO.every((r) => marcadas.includes(r.id))
 
-  const connected =
-    state?.status === 'conectado' ||
-    (Boolean(channel?.evolution_instance) && store?.onboarding_step === 'concluido')
+  // Duas coisas diferentes que antes eram uma só.
+  //
+  // O WhatsApp estar pareado NAO significa que a loja esta no ar: falta o aviso
+  // ao N8N, que e quem cria o fluxo do agente. Enquanto isso era um booleano so,
+  // a tela comemorava "seu agente ja esta atendendo" com base apenas no QR lido
+  // -- inclusive quando o N8N nunca tinha sido avisado.
+  const whatsappPareado = state?.status === 'conectado' || Boolean(channel?.evolution_instance)
+  const lojaAtivada = store?.onboarding_step === 'concluido'
+  const connected = whatsappPareado && lojaAtivada
 
-  /** Comemora, marca a implementação como concluída e avisa o N8N. */
+  /**
+   * Avisa o N8N e só então marca a implementação como concluída.
+   *
+   * A ordem importa mais do que parece. Antes esta função marcava
+   * `concluido` primeiro e chamava o N8N depois: quando essa chamada falhava
+   * (webhook fora do ar, timeout, URL errada no ambiente), o erro virava um
+   * toast que sumia em cinco segundos e a tela passava a exibir "Seu agente de
+   * IA já está atendendo" — cujo único botão desconecta o WhatsApp. O lojista
+   * via os confetes, fechava o painel, e o fluxo do agente nunca tinha sido
+   * criado para a loja dele. Não havia caminho nenhum para tentar de novo.
+   *
+   * Agora nada é dado como concluído antes de o N8N confirmar, a comemoração
+   * só acontece no sucesso, e a falha deixa o botão disponível para repetir.
+   */
   const finish = useCallback(async () => {
-    if (celebratedRef.current || !tenantId) return
-    celebratedRef.current = true
-
-    celebrate()
+    if (celebratedRef.current || finishing || !tenantId) return
     setFinishing(true)
+    setError(null)
 
     try {
-      await updateStore({ onboarding_step: 'concluido' })
-
       // Sincroniza a equipe de novo agora que a inbox do WhatsApp existe: e
       // esta passada que liga cada vendedor a inbox e faz ele aparecer no
       // seletor "Agente atribuido" da conversa. Nao pode derrubar a conclusao
@@ -96,22 +111,31 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
       await provisionChatwoot(tenantId).catch(() => undefined)
 
       const result = await completeProvisioning(tenantId)
-      toast(
-        result.forwarded
-          ? 'Tudo pronto! Sua loja foi enviada para o fluxo de automação.'
-          : 'WhatsApp conectado! (webhook do N8N não configurado no servidor)',
-        result.forwarded ? 'success' : 'info',
-      )
+
+      if (!result.forwarded) {
+        throw new Error(
+          'O servidor não conseguiu entregar sua loja ao fluxo de automação. Sem isso o agente não atende ninguém.',
+        )
+      }
+
+      await updateStore({ onboarding_step: 'concluido' })
+
+      celebratedRef.current = true
+      celebrate()
+      toast('Tudo pronto! Sua loja foi enviada para o fluxo de automação.', 'success')
     } catch (err) {
-      toast(
-        err instanceof Error ? `WhatsApp conectado, mas o envio ao N8N falhou: ${err.message}` : 'Falha ao finalizar.',
-        'error',
-      )
+      setError({
+        message:
+          err instanceof Error
+            ? `Seu WhatsApp está conectado, mas a loja ainda não foi ativada: ${err.message}`
+            : 'Seu WhatsApp está conectado, mas a loja ainda não foi ativada.',
+        hint: 'Clique em "Concluir implementação" para tentar de novo. Nada do que você já fez foi perdido.',
+      })
     } finally {
       setFinishing(false)
       await refresh()
     }
-  }, [tenantId, updateStore, refresh, toast])
+  }, [tenantId, finishing, updateStore, refresh, toast])
 
   // `finish` entra por ref para que o efeito abaixo não dependa dele: se
   // dependesse, cada renderização criaria um intervalo novo.
@@ -119,6 +143,20 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     finishRef.current = finish
   }, [finish])
+
+  // Retomada automática, uma vez por visita à tela.
+  //
+  // Cobre o caso mais comum de implantação pela metade: o lojista lê o QR, o
+  // WhatsApp pareia e ele fecha a aba (ou o 4G cai) antes de o painel confirmar.
+  // Quando ele volta, o número está pareado e a loja não foi ativada — e o certo
+  // é o painel terminar sozinho, não esperar que ele descubra um botão.
+  const tentouRetomarRef = useRef(false)
+  useEffect(() => {
+    if (tentouRetomarRef.current) return
+    if (!tenantId || !whatsappPareado || lojaAtivada) return
+    tentouRetomarRef.current = true
+    void finishRef.current()
+  }, [tenantId, whatsappPareado, lojaAtivada])
 
   // Enquanto o QR estiver na tela, consulta o status da instância.
   //
@@ -185,6 +223,42 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
     setState(null)
     setMarcadas([])
     await refresh()
+  }
+
+  // WhatsApp pareado e loja nao ativada: ou o aviso ao N8N falhou, ou o lojista
+  // fechou a aba entre a leitura do QR e a confirmacao. Antes esse estado era
+  // indistinguivel do sucesso e nao tinha saida. Agora tem botao.
+  if (whatsappPareado && !lojaAtivada) {
+    return (
+      <StepCard
+        title="Falta um passo"
+        description="Seu WhatsApp está conectado, mas a loja ainda não foi ativada no fluxo de atendimento."
+      >
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <p className="text-sm leading-relaxed text-ink-700">
+              O número já está pareado — isso não se perde. O que falta é avisar o fluxo de automação, que é quem
+              coloca o agente para atender. <strong>Até isso acontecer, ninguém é respondido.</strong>
+            </p>
+            {error && (
+              <p className="mt-3 text-sm leading-relaxed text-amber-900">
+                {error.message}
+                {error.hint ? <span className="mt-1 block text-amber-800/80">{error.hint}</span> : null}
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={() => void finish()} loading={finishing}>
+              Concluir implementação
+            </Button>
+            <Button variant="secondary" onClick={() => void reset()} disabled={finishing}>
+              Reconectar outro número
+            </Button>
+          </div>
+        </div>
+      </StepCard>
+    )
   }
 
   if (connected) {

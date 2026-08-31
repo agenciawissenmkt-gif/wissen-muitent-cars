@@ -14,6 +14,8 @@ import {
   HORARIO_PADRAO,
   descreveHorario,
   normalizaHorario,
+  temHorarioEscolhido,
+  validaHorario,
   type DiaDeFuncionamento,
 } from '../../core/business-hours'
 import { Button } from '../../ui/Button'
@@ -77,6 +79,7 @@ export function StepRules({ onNext }: { onNext: () => void }) {
 
   // --- Horário de funcionamento da loja (a porta aberta, não a Júlia)
   const [semana, setSemana] = useState<DiaDeFuncionamento[]>(HORARIO_PADRAO)
+  const [horarioConferido, setHorarioConferido] = useState(false)
 
   // --- Horário
   const [mode, setMode] = useState<'24h' | 'custom'>('24h')
@@ -148,6 +151,10 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     setServiceNotes(store.service_notes ?? '')
 
     setSemana(normalizaHorario(store.business_hours))
+    // Loja que ja escolheu o horario nao precisa confirmar de novo. Loja nova
+    // esta olhando o HORARIO_PADRAO, que e um chute -- e chute nao pode virar a
+    // frase que a Julia repete para todo cliente sem alguem ter olhado.
+    setHorarioConferido(temHorarioEscolhido(store.business_hours))
   }, [store?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -180,6 +187,17 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     event.preventDefault()
     if (!name.trim()) {
       setError('Informe o nome da concessionária.')
+      return
+    }
+
+    const erroDeHorario = validaHorario(semana)
+    if (erroDeHorario) {
+      setError(erroDeHorario)
+      return
+    }
+
+    if (!horarioConferido) {
+      setError('Confira o horário de funcionamento e marque que ele está certo antes de salvar.')
       return
     }
 
@@ -446,6 +464,22 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 A IA vai dizer assim: <span className="font-semibold text-ink-900">{descreveHorario(semana)}.</span>
               </p>
             </div>
+
+            <label className="mt-1 flex cursor-pointer items-start gap-3 rounded-2xl border border-ink-200 bg-ink-50/60 p-4">
+              <input
+                type="checkbox"
+                checked={horarioConferido}
+                onChange={(e) => setHorarioConferido(e.target.checked)}
+                className="mt-0.5 size-4 shrink-0 rounded border-ink-300 text-brand-600 focus:ring-brand-500"
+              />
+              <span className="text-sm leading-relaxed text-ink-700">
+                Confiro que esse é o horário real da minha loja.
+                <span className="mt-0.5 block text-xs text-ink-500">
+                  É exatamente essa frase que a Júlia responde quando o cliente pergunta que horas vocês abrem — e é
+                  ela que decide se uma visita pode ser marcada.
+                </span>
+              </span>
+            </label>
           </Section>
 
           <Section
