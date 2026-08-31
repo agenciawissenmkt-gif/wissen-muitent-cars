@@ -5,6 +5,27 @@ import { requireTenant, route } from '../lib/auth.js'
 
 const router = Router()
 
+/**
+ * A pagina de retorno do Google e a unica rota do servidor que responde HTML e
+ * nao exige sessao -- e ela imprime a mensagem de erro que vem na URL. Sem
+ * escapar, `?error=<img src=x onerror=...>` roda script na origem do painel e
+ * leva a sessao do lojista guardada no navegador.
+ *
+ * `</script>` tambem precisa ser quebrado: dentro de um bloco <script> o
+ * parser fecha a tag antes de o JSON existir, e JSON.stringify sozinho nao
+ * protege disso.
+ */
+function escapaHtml(texto) {
+  return String(texto ?? '').replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+  )
+}
+
+function paraScript(valor) {
+  return JSON.stringify(String(valor ?? '')).replace(/</g, '\\u003c')
+}
+
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar',
   'https://www.googleapis.com/auth/calendar.events',
@@ -84,13 +105,13 @@ router.get('/callback', async (req, res) => {
 <body style="font-family:system-ui;display:grid;place-items:center;height:100vh;margin:0;color:#0F172A">
 <div style="text-align:center">
   <h1 style="font-size:1.1rem">${ok ? 'Agenda conectada!' : 'Não foi possível conectar'}</h1>
-  <p style="color:#64748B;font-size:.9rem">${ok ? 'Pode fechar esta janela.' : String(error || '')}</p>
+  <p style="color:#64748B;font-size:.9rem">${ok ? 'Pode fechar esta janela.' : escapaHtml(error)}</p>
 </div>
 <script>
   try {
     window.opener && window.opener.postMessage(
-      { type: 'wissen:google', ok: ${ok ? 'true' : 'false'}, error: ${JSON.stringify(String(error || ''))} },
-      ${JSON.stringify(appUrl)}
+      { type: 'wissen:google', ok: ${ok ? 'true' : 'false'}, error: ${paraScript(error)} },
+      ${paraScript(appUrl)}
     );
   } catch (e) {}
   setTimeout(function () { window.close() }, ${ok ? 1200 : 4000});
