@@ -55,7 +55,10 @@ export function PhotoPicker({ photos, onChange }: Props) {
         <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-white text-brand-600 shadow-sm">
           <UploadIcon />
         </div>
-        <p className="mt-3 text-sm font-semibold text-ink-900">Arraste as fotos do veículo aqui</p>
+        <p className="mt-3 text-sm font-semibold text-ink-900">
+          <span className="sm:hidden">Adicione as fotos do veículo</span>
+          <span className="hidden sm:inline">Arraste as fotos do veículo aqui</span>
+        </p>
         <p className="mt-1 text-xs text-ink-500">
           JPG ou PNG, até {MAX_PHOTOS} fotos. A primeira foto é usada como capa do anúncio.
         </p>
@@ -100,11 +103,17 @@ export function PhotoPicker({ photos, onChange }: Props) {
                     Capa
                   </span>
                 )}
+                {/*
+                  No celular nao existe hover: com `opacity-0` esperando o mouse,
+                  o botao ficava invisivel e nao havia jeito nenhum de tirar uma
+                  foto errada do anuncio pelo telefone. Quem tem ponteiro continua
+                  vendo so ao passar o mouse; quem tem dedo ve sempre.
+                */}
                 <button
                   type="button"
                   onClick={() => remove(photo.id)}
                   aria-label="Remover foto"
-                  className="absolute right-1.5 top-1.5 grid size-7 place-items-center rounded-full bg-white/90 text-ink-700 opacity-0 shadow transition-opacity hover:text-red-600 group-hover:opacity-100 focus-visible:opacity-100"
+                  className="absolute right-1.5 top-1.5 grid size-8 place-items-center rounded-full bg-white/95 text-ink-700 shadow transition-opacity hover:text-red-600 focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
                 >
                   <TrashIcon className="size-4" />
                 </button>
