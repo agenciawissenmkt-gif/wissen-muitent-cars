@@ -45,7 +45,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 16, scale: 0.98 }}
             transition={{ type: 'spring', duration: 0.4, bounce: 0.15 }}
-            className={`relative flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl ${
+            className={`relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl sm:max-h-[92vh] sm:rounded-3xl ${
               size === 'lg' ? 'sm:max-w-3xl' : 'sm:max-w-lg'
             }`}
           >
@@ -71,7 +71,7 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
             <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
             {footer && (
-              <footer className="flex items-center justify-end gap-3 border-t border-ink-100 bg-ink-50/60 px-6 py-4">
+              <footer className="flex items-center justify-end gap-3 border-t border-ink-100 bg-ink-50/60 px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-4">
                 {footer}
               </footer>
             )}
