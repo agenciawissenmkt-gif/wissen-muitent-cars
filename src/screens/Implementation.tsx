@@ -108,6 +108,13 @@ export function Implementation() {
           Etapa {step} de 4 — {STEPS[step - 1].title}
         </div>
 
+        {/*
+          A entrada de cada etapa vem deslizando de x:24. Sem recorte, esses
+          24px viram rolagem horizontal no celular a cada troca de etapa -- a
+          tela inteira balancava de lado. `overflow-x-clip` corta o excesso sem
+          criar container de rolagem (o que engoliria a sombra dos cartoes).
+        */}
+        <div className="overflow-x-clip">
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -122,6 +129,7 @@ export function Implementation() {
             {step === 4 && <StepWhatsapp onBack={() => void goTo(3)} />}
           </motion.div>
         </AnimatePresence>
+        </div>
       </div>
     </div>
   )

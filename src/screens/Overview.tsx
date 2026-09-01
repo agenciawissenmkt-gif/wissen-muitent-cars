@@ -111,7 +111,7 @@ export function Overview() {
       <CentralDaLoja />
 
       <div className="mt-6 grid gap-5 lg:grid-cols-[1.35fr_1fr]">
-        <section className="rounded-3xl border border-ink-100 bg-white p-6 shadow-sm">
+        <section className="min-w-0 rounded-3xl border border-ink-100 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between gap-4">
             <h2 className="text-base font-bold text-ink-900">Últimos veículos cadastrados</h2>
             <Link to="/estoque" className="text-sm font-semibold text-brand-600 hover:text-brand-700">
@@ -159,7 +159,7 @@ export function Overview() {
           )}
         </section>
 
-        <section className="rounded-3xl border border-ink-100 bg-white p-6 shadow-sm">
+        <section className="min-w-0 rounded-3xl border border-ink-100 bg-white p-6 shadow-sm">
           <h2 className="text-base font-bold text-ink-900">Implementação</h2>
           <p className="mt-1 text-sm text-ink-500">Progresso da configuração do seu agente.</p>
 

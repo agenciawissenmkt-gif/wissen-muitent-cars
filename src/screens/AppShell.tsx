@@ -131,7 +131,7 @@ export function AppShell() {
                 animate={{ x: 0 }}
                 exit={{ x: '-100%' }}
                 transition={{ type: 'spring', duration: 0.4, bounce: 0 }}
-                className="relative flex h-full w-72 flex-col justify-between bg-white px-5 py-6"
+                className="relative flex h-full w-72 flex-col justify-between bg-white px-5 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))]"
               >
                 <div>
                   <Logo />
