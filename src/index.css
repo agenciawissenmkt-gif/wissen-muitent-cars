@@ -55,6 +55,20 @@ body {
   background-color: var(--color-ink-400);
 }
 
+/*
+ * O iOS dá zoom na página inteira quando o campo focado tem fonte menor que
+ * 16px — e não volta sozinho. Todo campo do painel usa `text-sm` (14px), então
+ * no iPhone cada toque num campo empurrava o layout para fora da tela. No
+ * celular a fonte sobe para 16px; no desktop nada muda.
+ */
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Tira as setinhas dos inputs numéricos */
 input[type="number"]::-webkit-outer-spin-button,
 input[type="number"]::-webkit-inner-spin-button {
