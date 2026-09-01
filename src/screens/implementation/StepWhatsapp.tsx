@@ -51,10 +51,12 @@ const REGRAS_DO_NUMERO = [
   },
 ]
 
+// "ao lado" so e verdade no computador: no celular o QR fica acima, e o
+// aparelho que le o QR nunca pode ser o mesmo que esta mostrando ele.
 const INSTRUCTIONS = [
   'Abra o WhatsApp no celular que vai atender os clientes.',
   'Toque em Configurações › Dispositivos conectados › Conectar dispositivo.',
-  'Aponte a câmera para o QR Code ao lado.',
+  'Aponte a câmera para o QR Code desta tela.',
 ]
 
 export function StepWhatsapp({ onBack }: { onBack: () => void }) {
@@ -374,6 +376,17 @@ export function StepWhatsapp({ onBack }: { onBack: () => void }) {
                 <span className="size-1.5 animate-pulse rounded-full bg-amber-500" />
                 Aguardando leitura
               </span>
+
+              {/*
+                Quem abre o painel no proprio celular fica preso: o WhatsApp
+                abre a camera nesse mesmo aparelho e nao ha como apontar a tela
+                para ela mesma. Melhor dizer isso antes de o lojista tentar.
+              */}
+              <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900 lg:hidden">
+                <strong>Você precisa de dois aparelhos.</strong> Quem lê o QR Code é o celular da loja — ele não
+                consegue ler o código da própria tela. Deixe esta página aberta no computador ou em outro celular e
+                aponte a câmera do celular da loja para cá.
+              </p>
               <ol className="mt-4 space-y-3">
                 {INSTRUCTIONS.map((instruction, index) => (
                   <li key={instruction} className="flex gap-3 text-sm text-ink-600">
