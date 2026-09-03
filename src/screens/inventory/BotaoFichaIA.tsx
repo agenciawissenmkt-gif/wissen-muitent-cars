@@ -9,6 +9,7 @@
 // dado do estoque e a Julia repete para o cliente como se fosse verdade.
 
 import { useState } from 'react'
+import { gerarFichaTecnica } from '../../core/api'
 
 export type FichaIA = {
   transmission?: string
@@ -44,23 +45,14 @@ export function BotaoFichaIA({ brand, model, year, version, onPreencher }: Props
   const podeGerar = Boolean(brand && model) && !carregando
 
   async function gerar() {
+    if (!brand || !model) return
     setErro(null)
     setAviso(null)
     setCarregando(true)
     try {
-      const r = await fetch('/api/ficha', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brand, model, year, version }),
-      })
-      const dados = await r.json()
+      const dados = await gerarFichaTecnica({ brand, model, year, version })
 
-      if (!r.ok) {
-        setErro(dados?.error || 'nao consegui gerar agora')
-        return
-      }
-
-      onPreencher(dados.ficha || {})
+      onPreencher((dados.ficha || {}) as FichaIA)
 
       const faltaram = (dados.total ?? 0) - (dados.preenchidos ?? 0)
       setAviso(
@@ -69,7 +61,7 @@ export function BotaoFichaIA({ brand, model, year, version, onPreencher }: Props
           : `${dados.preenchidos} campos preenchidos. Confira antes de salvar.`,
       )
     } catch (e) {
-      setErro('nao consegui falar com o servidor')
+      setErro(e instanceof Error ? e.message : 'nao consegui gerar agora')
     } finally {
       setCarregando(false)
     }
