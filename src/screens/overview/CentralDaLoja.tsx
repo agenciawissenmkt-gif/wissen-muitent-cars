@@ -52,14 +52,20 @@ export function CentralDaLoja() {
   async function entrar(pessoa: Salesperson) {
     if (!tenantId || abrindo) return
 
-    const aba = window.open('', '_blank', 'noopener,noreferrer')
+    const aba = window.open('about:blank', '_blank')
     setAbrindo(pessoa.id)
     setErro(null)
 
     try {
       const { url } = await chatwootSsoUrl(tenantId, pessoa.id)
-      if (aba) aba.location.href = url
-      else window.location.href = url
+      if (aba && !aba.closed) {
+        aba.opener = null
+        aba.location.replace(url)
+        aba.focus()
+      } else {
+        // popup bloqueado: abre direto, sem nunca navegar a aba atual
+        window.open(url, '_blank', 'noopener,noreferrer')
+      }
     } catch (err) {
       aba?.close()
       setErro(
