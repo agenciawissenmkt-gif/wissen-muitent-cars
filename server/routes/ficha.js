@@ -45,15 +45,20 @@ const SCHEMA = {
 
 const INSTRUCOES = [
   'Voce preenche fichas tecnicas de veiculos para uma loja brasileira.',
-  'Receba marca, modelo e ano e devolva as especificacoes de fabrica desse modelo no mercado brasileiro.',
+  'Receba marca, modelo e ano e devolva as especificacoes desse modelo no mercado brasileiro.',
   '',
-  'Regras:',
+  'Como decidir cada campo:',
+  '- Preencha com a configuracao mais comum desse modelo naquele ano no Brasil.',
+  '  A pessoa da loja confere tudo antes de salvar, entao um valor tipico ajuda;',
+  '  campo vazio so da trabalho para ela.',
+  '- Se o modelo teve varias versoes naquele ano, use a mais vendida.',
+  '- Se o pedido trouxe a versao, decida por ela.',
+  '- Deixe null so quando o item nao existe nesse modelo ou quando voce nao faz',
+  '  ideia. Null e para desconhecimento, nao para duvida pequena.',
+  '',
+  'Formato:',
   '- Responda SOMENTE o JSON do schema. Nada de texto antes ou depois.',
-  '- Campo que voce nao tem certeza vai como null. Null e melhor que chute:',
-  '  esse dado vai para o estoque da loja e sera dito ao cliente como verdade.',
-  '- Nao invente equipamento opcional. Se o item varia por versao e voce nao',
-  '  sabe qual versao e, devolva null.',
-  '- Use o padrao brasileiro: virgula decimal, cv para potencia, kgfm para torque.',
+  '- Padrao brasileiro: virgula decimal, cv para potencia, kgfm para torque.',
 ].join('\n')
 
 router.post(
