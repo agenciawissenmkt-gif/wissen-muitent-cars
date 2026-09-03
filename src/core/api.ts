@@ -150,6 +150,7 @@ export function completeProvisioning(tenantId: string) {
 }
 
 export function gerarFichaTecnica(input: {
+  tenant_id: string
   brand: string
   model: string
   year?: number | string
