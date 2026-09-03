@@ -13,6 +13,7 @@ import {
 } from '../../core/types'
 import { PhotoPicker } from './PhotoPicker'
 import type { CarDraft, PhotoItem } from './useCars'
+import { BotaoFichaIA } from './BotaoFichaIA'
 
 interface Props {
   open: boolean
@@ -179,6 +180,18 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
         </section>
 
         <section>
+          <BotaoFichaIA
+            brand={form.brand}
+            model={form.model}
+            year={form.year}
+            version={form.version}
+            onPreencher={(ficha) =>
+              setForm((atual) => ({
+                ...atual,
+                ...Object.fromEntries(Object.entries(ficha).map(([campo, valor]) => [campo, String(valor)])),
+              }))
+            }
+          />
           <h3 className="mb-3 text-sm font-bold text-ink-900">Ficha técnica</h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input label="Quilometragem" inputMode="numeric" value={form.mileage_km} onChange={(e) => set('mileage_km', e.target.value)} placeholder="45000" hint="Somente números" />
