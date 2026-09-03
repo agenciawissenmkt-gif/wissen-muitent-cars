@@ -148,3 +148,20 @@ export function completeProvisioning(tenantId: string) {
     body: JSON.stringify({ tenant_id: tenantId }),
   })
 }
+
+export function gerarFichaTecnica(input: {
+  brand: string
+  model: string
+  year?: number | string
+  version?: string
+}) {
+  return request<{
+    ficha: Record<string, string | number>
+    preenchidos: number
+    total: number
+    modelo_usado: string
+  }>('/ficha', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
