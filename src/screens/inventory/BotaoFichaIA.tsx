@@ -10,6 +10,7 @@
 
 import { useState } from 'react'
 import { gerarFichaTecnica } from '../../core/api'
+import { useTenant } from '../../core/tenant'
 
 export type FichaIA = {
   transmission?: string
@@ -38,19 +39,22 @@ type Props = {
 }
 
 export function BotaoFichaIA({ brand, model, year, version, onPreencher }: Props) {
+  const { store } = useTenant()
+  const tenantId = store?.tenant_id ?? null
+
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [aviso, setAviso] = useState<string | null>(null)
 
-  const podeGerar = Boolean(brand && model) && !carregando
+  const podeGerar = Boolean(brand && model && tenantId) && !carregando
 
   async function gerar() {
-    if (!brand || !model) return
+    if (!brand || !model || !tenantId) return
     setErro(null)
     setAviso(null)
     setCarregando(true)
     try {
-      const dados = await gerarFichaTecnica({ brand, model, year, version })
+      const dados = await gerarFichaTecnica({ tenant_id: tenantId, brand, model, year, version })
 
       onPreencher((dados.ficha || {}) as FichaIA)
 
