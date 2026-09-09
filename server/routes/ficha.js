@@ -26,9 +26,9 @@ const ESFORCO = process.env.OPENAI_FICHA_REASONING || 'minimal'
 // Os campos que a IA pode devolver. Sao exatamente as colunas de `cars`
 // que descrevem o modelo, nao a unidade.
 const CAMPOS = {
-  transmission: { type: ['string', 'null'], description: 'Cambio: Manual, Automatico, CVT, Automatizado' },
-  fuel: { type: ['string', 'null'], description: 'Combustivel: Gasolina, Flex, Diesel, Eletrico, Hibrido' },
-  body_type: { type: ['string', 'null'], description: 'Carroceria: Hatch, Sedan, SUV, Picape, Perua, Cupe' },
+  transmission: { type: ['string', 'null'], description: 'Use exatamente um destes: Manual, Automatico, Automatizado, CVT' },
+  fuel: { type: ['string', 'null'], description: 'Use exatamente um destes: Flex, Gasolina, Etanol, Diesel, Hibrido, Eletrico, GNV' },
+  body_type: { type: ['string', 'null'], description: 'Use exatamente um destes: Hatch, Seda, SUV, Picape, Utilitario, Coupe, Conversivel, Minivan' },
   doors: { type: ['integer', 'null'], description: 'Numero de portas' },
   engine: { type: ['string', 'null'], description: 'Motor, ex: 1.0 12V, 2.0 TFSI' },
   cylinders: { type: ['string', 'null'], description: 'Cilindros, ex: 3 cilindros, 4 cilindros' },
@@ -36,11 +36,66 @@ const CAMPOS = {
   torque: { type: ['string', 'null'], description: 'Torque com unidade, ex: 10,2 kgfm' },
   acceleration_0_100: { type: ['string', 'null'], description: '0 a 100 km/h em segundos, ex: 14,5' },
   aspiration: { type: ['string', 'null'], description: 'Aspirado ou Turbo' },
-  traction: { type: ['string', 'null'], description: 'Dianteira (FWD), Traseira (RWD), Integral (AWD)' },
+  traction: { type: ['string', 'null'], description: 'Use exatamente um destes: Dianteira, Traseira, 4x4, AWD' },
   air_conditioning: { type: ['string', 'null'], description: 'Manual, Digital, Dual zone ou Nao possui' },
   steering: { type: ['string', 'null'], description: 'Mecanica, Hidraulica, Eletro-hidraulica ou Eletrica' },
   electric_windows: { type: ['string', 'null'], description: 'Dianteiros, 4 portas, Nao possui' },
   sunroof: { type: ['string', 'null'], description: 'Teto solar: Nao possui, Solar, Panoramico' },
+}
+
+// O painel guarda esses campos como <select>. Se a IA devolver um texto que nao
+// e identico a uma opcao, o campo aparece EM BRANCO no cadastro -- e some se a
+// loja salvar o carro. Entao aqui o valor e encaixado na opcao certa, com acento
+// e tudo, exatamente como o painel escreve.
+const OPCOES = {
+  transmission: ['Manual', 'Automático', 'Automatizado', 'CVT'],
+  fuel: ['Flex', 'Gasolina', 'Etanol', 'Diesel', 'Híbrido', 'Elétrico', 'GNV'],
+  body_type: ['Hatch', 'Sedã', 'SUV', 'Picape', 'Utilitário', 'Coupé', 'Conversível', 'Minivan'],
+  traction: ['Dianteira', 'Traseira', '4x4', 'AWD'],
+}
+
+// Como a IA (ou o cadastro antigo) costuma escrever, e para onde isso vai.
+const SINONIMOS = {
+  body_type: { sedan: 'Sedã', cupe: 'Coupé', coupe: 'Coupé', perua: 'Utilitário', wagon: 'Utilitário', suv: 'SUV', pickup: 'Picape', hatchback: 'Hatch' },
+  fuel: { eletrico: 'Elétrico', hibrido: 'Híbrido', alcool: 'Etanol', 'flex fuel': 'Flex' },
+  transmission: { automatica: 'Automático', automatico: 'Automático', manual: 'Manual', cvt: 'CVT' },
+  traction: { fwd: 'Dianteira', rwd: 'Traseira', awd: 'AWD', integral: 'AWD', quattro: 'AWD', '4motion': 'AWD', '4wd': '4x4' },
+}
+
+function semAcento(texto) {
+  return String(texto).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+}
+
+function encaixaNaOpcao(campo, valor) {
+  const lista = OPCOES[campo]
+  if (!lista) return valor
+  const alvo = semAcento(valor)
+
+  // 1. igual a uma opcao, ignorando acento e caixa
+  const exato = lista.find((o) => semAcento(o) === alvo)
+  if (exato) return exato
+
+  // 2. sinonimo conhecido
+  const sin = (SINONIMOS[campo] || {})[alvo]
+  if (sin) return sin
+
+  // 3. "Dianteira (FWD)" -> "Dianteira", "4x4 (AWD)" -> "4x4"
+  const semParenteses = alvo.replace(/\s*\(.*\)\s*/, '').trim()
+  const porPrefixo = lista.find((o) => semAcento(o) === semParenteses)
+  if (porPrefixo) return porPrefixo
+  const sinPrefixo = (SINONIMOS[campo] || {})[semParenteses]
+  if (sinPrefixo) return sinPrefixo
+
+  // 4. ultima tentativa: alguma palavra conhecida dentro do texto
+  for (const [chave, destino] of Object.entries(SINONIMOS[campo] || {})) {
+    if (alvo.includes(chave)) return destino
+  }
+  for (const o of lista) {
+    if (alvo.includes(semAcento(o))) return o
+  }
+
+  // fora da lista: melhor campo vazio do que lixo no estoque
+  return null
 }
 
 const SCHEMA = {
@@ -155,7 +210,10 @@ router.post(
     for (const campo of Object.keys(CAMPOS)) {
       const valor = ficha[campo]
       if (valor === null || valor === undefined || valor === '') continue
-      limpa[campo] = campo === 'doors' ? Number(valor) : String(valor).trim()
+      if (campo === 'doors') { limpa[campo] = Number(valor); continue }
+      const encaixado = encaixaNaOpcao(campo, String(valor).trim())
+      if (encaixado === null) continue
+      limpa[campo] = encaixado
     }
 
     res.json({
