@@ -14,7 +14,14 @@ import { requireTenant, route } from '../lib/auth.js'
 const router = Router()
 
 const MODELO = process.env.OPENAI_FICHA_MODEL || 'gpt-5-nano'
-const TIMEOUT_MS = Number(process.env.OPENAI_FICHA_TIMEOUT_MS || 20000)
+const TIMEOUT_MS = Number(process.env.OPENAI_FICHA_TIMEOUT_MS || 55000)
+
+// gpt-5-nano e um modelo que "pensa" antes de responder, e isso custa segundos.
+// Ficha tecnica nao precisa de raciocinio longo: e consulta de especificacao.
+// Com esforco minimo a resposta sai em poucos segundos em vez de dezenas.
+// Se algum dia o modelo escolhido nao aceitar o parametro, o codigo repete a
+// chamada sem ele em vez de quebrar.
+const ESFORCO = process.env.OPENAI_FICHA_REASONING || 'minimal'
 
 // Os campos que a IA pode devolver. Sao exatamente as colunas de `cars`
 // que descrevem o modelo, nao a unidade.
@@ -76,29 +83,50 @@ router.post(
     const controle = new AbortController()
     const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS)
 
-    let resposta
-    try {
-      resposta = await fetch('https://api.openai.com/v1/chat/completions', {
+    function chamar(corpoPedido) {
+      return fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
         signal: controle.signal,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
         },
-        body: JSON.stringify({
-          model: MODELO,
-          messages: [
-            { role: 'system', content: INSTRUCOES },
-            { role: 'user', content: `Veiculo: ${carro}` },
-          ],
-          response_format: {
-            type: 'json_schema',
-            json_schema: { name: 'ficha_tecnica', strict: true, schema: SCHEMA },
-          },
-        }),
+        body: JSON.stringify(corpoPedido),
       })
+    }
+
+    const pedidoBase = {
+      model: MODELO,
+      messages: [
+        { role: 'system', content: INSTRUCOES },
+        { role: 'user', content: `Veiculo: ${carro}` },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'ficha_tecnica', strict: true, schema: SCHEMA },
+      },
+    }
+    const pedido = ESFORCO === 'off' ? pedidoBase : { ...pedidoBase, reasoning_effort: ESFORCO }
+
+    let resposta
+    try {
+      resposta = await chamar(pedido)
+
+      // Modelo que nao conhece reasoning_effort devolve 400. Tenta sem ele.
+      if (resposta.status === 400 && pedido.reasoning_effort) {
+        const detalhe = await resposta.text()
+        if (/reasoning_effort/i.test(detalhe)) {
+          resposta = await chamar(pedidoBase)
+        } else {
+          console.error('[ficha] openai respondeu 400', detalhe.slice(0, 300))
+          throw new HttpError(502, 'A IA recusou o pedido. Tente de novo.')
+        }
+      }
     } catch (erro) {
-      if (erro.name === 'AbortError') throw new HttpError(504, 'A IA demorou demais. Tente de novo.')
+      if (erro instanceof HttpError) throw erro
+      if (erro.name === 'AbortError') {
+        throw new HttpError(504, 'A IA demorou demais. Tente de novo.')
+      }
       throw new HttpError(502, 'Nao consegui falar com a IA agora.')
     } finally {
       clearTimeout(relogio)
