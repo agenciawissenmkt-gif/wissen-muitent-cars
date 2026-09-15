@@ -51,7 +51,7 @@ const APARENCIA: Record<Situacao, { rotulo: string; ponto: string; caixa: string
     texto: 'text-red-700',
   },
   provavel_banimento: {
-    rotulo: 'Provável banimento do número',
+    rotulo: 'Sem conexão há mais de duas horas',
     ponto: 'bg-red-600',
     caixa: 'border-red-300 bg-red-50',
     texto: 'text-red-800',
@@ -73,7 +73,7 @@ const APARENCIA: Record<Situacao, { rotulo: string; ponto: string; caixa: string
 const EVENTOS: Record<string, string> = {
   caiu: 'Conexão caiu',
   recuperou: 'Conexão voltou',
-  alerta: 'Alerta aberto — fora do ar',
+  alerta: 'Passou de 15 minutos fora do ar',
   reconexao_tentada: 'Reconexão automática tentada',
   inicio_ok: 'Primeira leitura — conectado',
   inicio_falha: 'Primeira leitura — sem conexão',
@@ -93,16 +93,53 @@ function haQuantoTempo(iso: string | null): string {
   return dias === 1 ? 'há 1 dia' : `há ${dias} dias`
 }
 
-function explicacao(linha: MonitorRow): string {
-  switch (linha.situacao) {
+/**
+ * A escala de gravidade mora AQUI, ao lado dos textos que a descrevem — não no
+ * banco. Foi justamente essa separação que deixou o painel mentindo por
+ * semanas: o monitor mudou em set/2026, a view `monitor_lojas` continuou com o
+ * limiar antigo, e os textos seguiram contando um comportamento que já não
+ * existia. Junto no mesmo arquivo, texto e limiar não têm como divergir.
+ *
+ * O que o monitor faz de verdade (verifica a cada 5 minutos):
+ *    3 quedas (~15 min) → abre alerta                     → "fora_do_ar"
+ *   12 quedas (~1 h)    → 1ª tentativa de reconexão, e de hora em hora depois
+ *   24 quedas (~2 h)    → a reconexão já tentou e não resolveu → escala
+ *
+ * Só escalamos depois que a reconexão automática teve chance. Antes disso,
+ * falar em banimento é dar um susto sério no lojista por uma coisa que quase
+ * sempre é o celular da loja sem bateria.
+ *
+ * A view do banco ainda escala com 12; enquanto ela não for atualizada, quem
+ * manda é esta função. Quando for, as duas passam a dizer a mesma coisa.
+ */
+const QUEDAS_PARA_ESCALAR = 24
+
+function situacaoReal(linha: MonitorRow): Situacao {
+  // 'nunca_checado' é a única que depende de algo que só o banco sabe: se
+  // existe ou não linha de monitoramento para esta loja.
+  if (linha.situacao === 'nunca_checado') return 'nunca_checado'
+  if (linha.ok) return 'conectado'
+  if (linha.estado === 'inexistente') return 'sem_instancia'
+  if (
+    (linha.estado === 'close' || linha.estado === 'connecting') &&
+    (linha.quedas_seguidas ?? 0) >= QUEDAS_PARA_ESCALAR
+  ) {
+    return 'provavel_banimento'
+  }
+  if (linha.alerta) return 'fora_do_ar'
+  return 'instavel'
+}
+
+function explicacao(linha: MonitorRow, situacao: Situacao): string {
+  switch (situacao) {
     case 'conectado':
       return `Conectado ${haQuantoTempo(linha.desde)} e respondendo aos clientes.`
     case 'instavel':
-      return `A Evolution respondeu "${linha.estado ?? 'sem estado'}" nas últimas ${linha.quedas_seguidas ?? 0} verificações. Estamos tentando reconectar sozinhos.`
+      return `A conexão falhou nas últimas ${linha.quedas_seguidas ?? 0} verificações, mas ainda pode ser oscilação de internet na loja. Se passar de 15 minutos, o aviso aqui muda.`
     case 'fora_do_ar':
-      return `Sem conexão ${haQuantoTempo(linha.desde)}. A reconexão automática já foi acionada; se não voltar, refaça a Etapa 4 e leia o QR Code de novo.`
+      return `Sem conexão ${haQuantoTempo(linha.desde)}. Quase sempre é o celular da loja: sem internet, desligado ou com o WhatsApp fechado — confira o aparelho primeiro. Se não voltar sozinho, tentamos reconectar automaticamente a partir de uma hora de queda, e de hora em hora depois disso.`
     case 'provavel_banimento':
-      return `Sem conexão ${haQuantoTempo(linha.desde)}, e as tentativas automáticas de reconectar já pararam. Isso deixou de ser uma queda passageira. Abra o WhatsApp no celular da loja: se ele pedir o número de novo, ou disser que a conta foi desconectada, o número foi banido — e aí ler o QR Code outra vez não resolve. Se o WhatsApp abrir normalmente, foi só o celular fora do ar: refaça a Etapa 4.`
+      return `Sem conexão ${haQuantoTempo(linha.desde)}, mesmo com a reconexão automática tentando de hora em hora. Abra o WhatsApp no celular da loja: se ele abrir normalmente, foi o aparelho que ficou fora do ar e basta refazer a Etapa 4. Se ele pedir o número de novo, ou disser que a conta foi desconectada, aí o número pode ter sido banido — nesse caso ler o QR Code outra vez não resolve, e o caminho é falar com a gente.`
     case 'sem_instancia':
       return 'Não existe conexão ativa para esta loja na Evolution. Vá até a Etapa 4 e conecte o WhatsApp.'
     default:
@@ -151,13 +188,14 @@ export function ConnectionStatus() {
   // Enquanto não há leitura nenhuma, não vale a pena ocupar espaço na tela.
   if (!tenantId || carregando || !linha) return null
 
-  const visual = APARENCIA[linha.situacao] ?? APARENCIA.nunca_checado
+  const situacao = situacaoReal(linha)
+  const visual = APARENCIA[situacao] ?? APARENCIA.nunca_checado
 
   return (
     <section className={`mt-6 rounded-2xl border px-5 py-4 ${visual.caixa}`}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <span className="relative flex size-2.5">
-          {linha.situacao !== 'conectado' && (
+          {situacao !== 'conectado' && (
             <span className={`absolute inline-flex size-full animate-ping rounded-full opacity-60 ${visual.ponto}`} />
           )}
           <span className={`relative inline-flex size-2.5 rounded-full ${visual.ponto}`} />
@@ -175,7 +213,7 @@ export function ConnectionStatus() {
         )}
       </div>
 
-      <p className={`mt-1.5 text-sm leading-relaxed ${visual.texto}`}>{explicacao(linha)}</p>
+      <p className={`mt-1.5 text-sm leading-relaxed ${visual.texto}`}>{explicacao(linha, situacao)}</p>
 
       {aberto && (
         <ul className="mt-3 space-y-1 border-t border-white/60 pt-3">
