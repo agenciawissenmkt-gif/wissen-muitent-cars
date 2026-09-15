@@ -6,6 +6,7 @@ import {
   createAccountAgent,
   ensureAgentWebhook,
   ensureInboxMembers,
+  ensureTeamAtendimento,
   enviarEmailDeAcesso,
   listAccountAgents,
 } from '../lib/chatwoot-account.js'
@@ -307,8 +308,15 @@ router.post(
 
       await upsertChannel(tenant.id, { chatwoot_account_id: accountId, ativo: true })
 
+      const timeExterno = await ensureTeamAtendimento(
+        accountId,
+        tokenInformado,
+        usersExterno.map((u) => u.chatwoot_user_id).filter(Boolean),
+      ).catch(() => null)
+
       const patchExterno = { tenant_id: tenant.id }
       if (!settings?.chatwoot_base_url) patchExterno.chatwoot_base_url = baseUrl
+      if (timeExterno?.team_id) patchExterno.team_atendimento_id = timeExterno.team_id
       if (Object.keys(patchExterno).length > 1) {
         await db.upsert('tenant_settings', [patchExterno], 'tenant_id')
       }
@@ -321,6 +329,7 @@ router.post(
         conflitos: conflitosExterno,
         webhook: webhookExterno,
         inbox: inboxExterno,
+        time: timeExterno,
         convites: convitesExterno,
       })
       return
@@ -432,9 +441,20 @@ router.post(
       idsDaEquipe,
     ).catch(() => null)
 
+    // Depois da inbox, e num upsert separado de proposito: o de cima carrega o
+    // chatwoot_token e nao pode esperar mais uma ida ao Chatwoot antes de ser
+    // gravado (a rota ja vive perto do teto de 30s da Vercel). Se o time falhar,
+    // a etapa termina igual e a proxima execucao tenta de novo.
+    const time = await ensureTeamAtendimento(accountId, adminToken, idsDaEquipe).catch(() => null)
+    if (time?.team_id && time.team_id !== settings?.team_atendimento_id) {
+      await db
+        .upsert('tenant_settings', [{ tenant_id: tenant.id, team_atendimento_id: time.team_id }], 'tenant_id')
+        .catch(() => null)
+    }
+
     const convites = await mandaConvites(team, users, { reenviar })
 
-    res.json({ account_id: accountId, users, conflitos, webhook, inbox, convites })
+    res.json({ account_id: accountId, users, conflitos, webhook, inbox, time, convites })
   }),
 )
 

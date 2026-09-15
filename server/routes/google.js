@@ -2,6 +2,7 @@ import { Router } from 'express'
 import crypto from 'node:crypto'
 import { db, HttpError } from '../lib/db.js'
 import { requireTenant, route } from '../lib/auth.js'
+import { ensureCalendarioDaLoja } from '../lib/google-calendar.js'
 
 const router = Router()
 
@@ -146,13 +147,24 @@ router.get('/callback', async (req, res) => {
     })
     const profile = profileRes.ok ? await profileRes.json() : {}
 
+    // Agenda propria da loja. Se o Google falhar, ensureCalendarioDaLoja devolve
+    // null e caimos na agenda principal da conta -- que era o comportamento
+    // anterior. Conectar a agenda nunca pode falhar por causa disso.
+    const loja = await db.selectOne('tenants', `id=eq.${tenantId}&select=nome,timezone`)
+    const calendarioDaLoja = await ensureCalendarioDaLoja({
+      accessToken: tokens.access_token,
+      nomeDaLoja: loja?.nome,
+      timezone: loja?.timezone,
+    })
+    const calendarId = calendarioDaLoja ?? profile.email ?? 'primary'
+
     await db.upsert(
       'tenant_google_credentials',
       [
         {
           tenant_id: tenantId,
           email: profile.email ?? null,
-          calendar_id: 'primary',
+          calendar_id: calendarId,
           access_token: tokens.access_token ?? null,
           refresh_token: tokens.refresh_token ?? null,
           scope: tokens.scope ?? null,
@@ -167,7 +179,7 @@ router.get('/callback', async (req, res) => {
 
     await db.upsert(
       'tenant_settings',
-      [{ tenant_id: tenantId, google_calendar_id: profile.email ?? 'primary' }],
+      [{ tenant_id: tenantId, google_calendar_id: calendarId }],
       'tenant_id',
     )
 
