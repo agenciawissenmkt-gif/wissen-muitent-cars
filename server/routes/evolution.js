@@ -359,6 +359,19 @@ router.post(
           instanceName: name,
           qrcode: false,
           integration: 'WHATSAPP-BAILEYS',
+
+          // Puxa o historico do proprio celular na hora do pareamento.
+          //
+          // Sem isso a Evolution so conhece o que acontece DEPOIS que a loja
+          // conecta -- e para a Julia toda conversa parece nova. Numa loja que
+          // usa o mesmo numero ha anos isso deu no que tinha de dar: ela entrou
+          // em negociacoes que ja estavam em andamento e respondeu sem contexto
+          // clientes que o dono ja estava atendendo na mao.
+          //
+          // Com o historico, a regra "so cliente novo, ou parado ha 15 dias"
+          // passa a ter em que se apoiar. Ver "Contato ja era do dono?" no
+          // fluxo do n8n.
+          syncFullHistory: true,
         },
       })
     } catch (error) {

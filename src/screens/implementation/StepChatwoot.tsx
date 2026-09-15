@@ -3,7 +3,7 @@ import { supabase } from '../../core/supabase'
 import { useTenant } from '../../core/tenant'
 import { useAuth } from '../../core/auth'
 import { ApiError, chatwootTeam, provisionChatwoot, type ChatwootAgent } from '../../core/api'
-import type { SalespersonRole } from '../../core/types'
+import type { Salesperson, SalespersonRole } from '../../core/types'
 import { Button } from '../../ui/Button'
 import { Input } from '../../ui/Field'
 import { useToast } from '../../ui/Feedback'
@@ -23,6 +23,7 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [telefone, setTelefone] = useState('')
   const [role, setRole] = useState<SalespersonRole>('agent')
   const [adding, setAdding] = useState(false)
   const [sincronizando, setSincronizando] = useState(false)
@@ -94,6 +95,7 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
       name: name.trim(),
       email: emailLimpo,
       role: papel,
+      telefone: telefone.trim() || null,
     })
 
     if (insertError) {
@@ -111,6 +113,7 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
       }
       setName('')
       setEmail('')
+      setTelefone('')
       setRole('agent')
       await refresh()
     }
@@ -119,6 +122,21 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
 
   async function removePerson(id: string) {
     await supabase.from('salespeople').delete().eq('id', id)
+    await refresh()
+  }
+
+  // O telefone tambem precisa ser editavel depois, porque quase sempre a pessoa
+  // e cadastrada primeiro e so depois alguem pergunta o numero dela.
+  async function salvarTelefone(id: string, valor: string) {
+    const limpo = valor.trim()
+    const { error: updateError } = await supabase
+      .from('salespeople')
+      .update({ telefone: limpo || null })
+      .eq('id', id)
+    if (updateError) {
+      setError({ message: `Nao consegui salvar o WhatsApp: ${updateError.message}` })
+      return
+    }
     await refresh()
   }
 
@@ -275,8 +293,12 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
               ? 'Comece pelo dono da loja: é a conta que administra a central. Depois de cadastrá-lo, os vendedores são liberados.'
               : 'Ao clicar em Continuar, cada pessoa da lista recebe um e-mail para definir a própria senha e entrar na central.'}
           </p>
+          <p className="mt-1 text-xs text-ink-500">
+            O WhatsApp é por onde a pessoa é avisada quando uma conversa cai para ela. Sem ele, o aviso não sai — dá
+            para preencher agora ou depois, na própria lista.
+          </p>
 
-          <form onSubmit={addPerson} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <form onSubmit={addPerson} className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
             <Input
               placeholder={faltaAdmin ? 'Nome do administrador' : 'Nome do vendedor'}
               value={name}
@@ -287,6 +309,13 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
               placeholder="email@loja.com.br"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+            />
+            <Input
+              type="tel"
+              inputMode="tel"
+              placeholder="WhatsApp (41) 99999-9999"
+              value={telefone}
+              onChange={(e) => setTelefone(e.target.value)}
             />
             <div className="flex gap-2">
               <select
@@ -312,6 +341,10 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold text-ink-900">{person.name}</span>
                     <span className="block truncate text-xs text-ink-500">{person.email}</span>
+                    <TelefoneDoVendedor
+                      pessoa={person}
+                      onSalvar={(valor) => void salvarTelefone(person.id, valor)}
+                    />
                   </span>
                   <span
                     className={`rounded-full px-2.5 py-1 text-[0.65rem] font-bold ${
@@ -381,5 +414,44 @@ export function StepChatwoot({ onNext, onBack }: { onNext: () => void; onBack: (
         </p>
       </div>
     </StepCard>
+  )
+}
+
+
+/**
+ * O WhatsApp de quem atende, editavel direto na lista.
+ *
+ * Guarda o que foi digitado num estado proprio e so grava quando a pessoa sai
+ * do campo: salvar a cada tecla dispararia um update por letra. O valor volta
+ * a acompanhar o cadastro sempre que ele muda por fora, para o campo nao ficar
+ * mostrando um numero antigo depois de um refresh.
+ */
+function TelefoneDoVendedor({
+  pessoa,
+  onSalvar,
+}: {
+  pessoa: Salesperson
+  onSalvar: (valor: string) => void
+}) {
+  const gravado = pessoa.telefone ?? ''
+  const [valor, setValor] = useState(gravado)
+
+  useEffect(() => {
+    setValor(gravado)
+  }, [gravado])
+
+  return (
+    <input
+      type="tel"
+      inputMode="tel"
+      value={valor}
+      onChange={(e) => setValor(e.target.value)}
+      onBlur={() => {
+        if (valor.trim() !== gravado.trim()) onSalvar(valor)
+      }}
+      placeholder="WhatsApp para aviso"
+      aria-label={`WhatsApp de ${pessoa.name}`}
+      className="mt-0.5 w-full max-w-[14rem] rounded-lg border border-transparent bg-transparent px-1.5 py-0.5 text-xs text-ink-600 transition-colors placeholder:text-ink-300 hover:border-ink-200 focus:border-brand-500 focus:bg-white focus:text-ink-900 focus:outline-none"
+    />
   )
 }

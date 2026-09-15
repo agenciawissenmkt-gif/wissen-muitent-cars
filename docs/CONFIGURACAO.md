@@ -79,6 +79,21 @@ Ele testa cada chave contra a API de verdade e diz qual está errada, sem imprim
 Enquanto uma chave não existir, a etapa correspondente diz na tela qual variável falta —
 o estoque e o dashboard seguem funcionando.
 
+### Variáveis da Evolution que o painel NÃO controla
+
+Estas ficam no serviço `evolution-api` no EasyPanel (Environment) e valem para
+todas as lojas de uma vez. O painel não as escreve — se o serviço for recriado,
+precisam ser postas de volta à mão.
+
+| Variável | Valor | Por quê |
+| --- | --- | --- |
+| `CHATWOOT_BOT_CONTACT` | `false` | Com `true` (o padrão), a Evolution cria um contato chamado **EvolutionAPI** dentro da central de cada loja e manda para lá o QR Code e avisos como "🚀 Connection successfully established!" e "⚠️ QRCode generation limit reached". Isso enche a caixa de entrada do vendedor com conversa que não é de cliente. O painel lê o QR Code direto da Evolution (`instance/connect`) e mostra na Etapa 4, então esse contato não serve para nada aqui. |
+| `DATABASE_SAVE_IS_ON_WHATSAPP` | `false` | Evita milhares de upserts paralelos na tabela `IsOnWhatsapp` a cada conexão, que estouravam o pool do Prisma (erro P2024) e derrubavam o pareamento. |
+| `connection_limit` / `pool_timeout` | `20` / `30` | Sufixo do `DATABASE_CONNECTION_URI`. O padrão do Prisma (`num_cpus * 2 + 1`) dá 5 numa máquina de 2 núcleos — pouco demais. |
+
+Trocar qualquer uma delas reinicia o serviço, e o WhatsApp de todas as lojas cai
+por alguns segundos até a sessão voltar. Faça fora do horário comercial.
+
 ### Endereços da sua infraestrutura
 
 | Serviço | URL |
@@ -131,3 +146,23 @@ registrado na execução do n8n.
 - **Fotos antigas**: as 52 fotos já cadastradas apontam para `wissencars.lovable.app`. Elas
   continuam funcionando; se aquele domínio sair do ar, basta recadastrar as fotos pelo painel
   para que passem a viver no Storage do Supabase.
+
+## Agenda da loja (Google Agenda)
+
+A etapa 5 conecta o Google e, desde 13/09/2026, garante uma agenda com o nome
+da loja: procura entre as agendas que a conta ja possui e reaproveita a que tem
+o mesmo nome; so cria quando nao existe nenhuma. E o reaproveitamento que evita
+duplicata quando o lojista refaz a etapa.
+
+Antes disso o painel apontava a loja para a agenda PRINCIPAL da conta conectada
+(`profile.email`). Quem quisesse agenda separada -- que e a regra do produto,
+para nao misturar as visitas de lojas diferentes -- criava na mao no Google e
+trocava o `google_calendar_id` no banco. Foi assim que a conta de producao ficou
+com duas "JC CAR VEICULOS" e duas "w Multimarcas": o mesmo trabalho manual
+repetido. Agendas duplicadas nao quebram nada (a Julia usa a que esta gravada
+em `tenant_settings.google_calendar_id`), mas confundem quem olha, e so o dono
+da conta pode apagar.
+
+Se a API do Google falhar no meio, a conexao continua valendo e a loja fica com
+a agenda principal, como antes -- perder a agenda separada e chato, travar a
+implantacao e pior.

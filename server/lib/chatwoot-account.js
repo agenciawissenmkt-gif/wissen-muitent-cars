@@ -168,3 +168,66 @@ export async function enviarEmailDeAcesso(email) {
 
   return true
 }
+
+/**
+ * Garante que a central da loja tenha o time "atendimento" e devolve o id dele.
+ *
+ * Este time e o endereco para onde a conversa vai no momento em que a Julia
+ * entrega o cliente: o fluxo do n8n faz um POST em /assignments com
+ * { team_id: <este id> } antes de escolher o vendedor do rodizio. Ate agora o
+ * painel nunca criava esse time nem gravava o id, entao tenant_settings.
+ * team_atendimento_id ficava nulo para toda loja nova e aquele passo virava um
+ * POST com team_id: null -- ou seja, limpava o time em vez de definir um. O
+ * handoff so nao quebrava porque o rodizio atribui um vendedor logo depois.
+ *
+ * allow_auto_assign fica FALSE de proposito: quem distribui a conversa e o
+ * rodizio do proprio produto (2 minutos por vendedor, administrador por
+ * ultimo). Deixar o Chatwoot distribuir tambem faria as duas regras brigarem
+ * pela mesma conversa.
+ */
+export async function ensureTeamAtendimento(accountId, token, userIds) {
+  if (!accountId || !token) return { skipped: 'sem conta ou sem token' }
+
+  let times = []
+  try {
+    times = comoLista(await accountApi(accountId, 'teams', { token }), 'teams')
+  } catch {
+    // central antiga ou permissao limitada: seguimos tentando criar
+  }
+
+  const existente = times.find((t) => String(t?.name || '').trim().toLowerCase() === 'atendimento') ?? null
+
+  if (existente?.id) {
+    // Time ja existe: devolvemos o id e NAO mexemos em quem esta dentro. Em
+    // loja que ja rodava, essa lista foi montada a mao pelo lojista (o dono da
+    // central costuma ficar de fora de proposito) -- reescrever isso aqui seria
+    // o painel desfazendo escolha de gente.
+    return { team_id: Number(existente.id), criado: false, membros: null }
+  }
+
+  const criado = await accountApi(accountId, 'teams', {
+    method: 'POST',
+    token,
+    body: {
+      name: 'atendimento',
+      description: 'Conversas que a Julia entregou para um vendedor humano.',
+      allow_auto_assign: false,
+    },
+  })
+
+  const teamId = Number(criado?.id) || null
+  if (!teamId) return { skipped: 'o Chatwoot nao devolveu o id do time' }
+
+  // So faz sentido povoar o time que acabamos de criar. Sem ninguem dentro,
+  // atribuir a conversa a ele a esconde de todo mundo ate o rodizio agir.
+  const desejados = [...new Set((userIds || []).filter(Boolean).map(Number))]
+  if (desejados.length) {
+    await accountApi(accountId, `teams/${teamId}/team_members`, {
+      method: 'POST',
+      token,
+      body: { user_ids: desejados },
+    }).catch(() => null) // time criado vale mais do que a lista de membros
+  }
+
+  return { team_id: teamId, criado: true, membros: desejados.length }
+}
