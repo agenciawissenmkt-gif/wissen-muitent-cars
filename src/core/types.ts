@@ -128,6 +128,8 @@ export interface Salesperson {
   email: string
   role: SalespersonRole
   chatwoot_user_id: number | null
+  /** WhatsApp de quem atende. E por aqui que ele recebe o aviso de conversa nova. */
+  telefone: string | null
 }
 
 export interface CarPhoto {
