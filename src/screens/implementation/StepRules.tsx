@@ -7,7 +7,9 @@ import {
   INSPECTION_LABEL,
   PARTNER_BANKS,
   type AgentType,
+  type HorarioDaIA,
   type InspectionType,
+  type JanelaDaIA,
 } from '../../core/types'
 import {
   DIAS_DA_SEMANA,
@@ -81,10 +83,10 @@ export function StepRules({ onNext }: { onNext: () => void }) {
   const [semana, setSemana] = useState<DiaDeFuncionamento[]>(HORARIO_PADRAO)
   const [horarioConferido, setHorarioConferido] = useState(false)
 
-  // --- Horário
-  const [mode, setMode] = useState<'24h' | 'custom'>('24h')
-  const [start, setStart] = useState('18:00')
-  const [end, setEnd] = useState('08:00')
+  // --- Horário em que a Júlia pode falar (não confundir com a porta da loja)
+  const [iaModo, setIaModo] = useState<HorarioDaIA['modo']>('24h')
+  const [iaSemana, setIaSemana] = useState<JanelaDaIA>({ ativo: true, abre: '08:00', fecha: '18:00' })
+  const [iaFds, setIaFds] = useState<JanelaDaIA>({ ativo: true, abre: '09:00', fecha: '13:00' })
 
   // --- Regras comerciais
   const [trade, setTrade] = useState(true)
@@ -158,14 +160,25 @@ export function StepRules({ onNext }: { onNext: () => void }) {
   }, [store?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    const salvo = settings?.ai_hours
+    if (salvo && salvo.modo) {
+      setIaModo(salvo.modo)
+      if (salvo.semana) setIaSemana(salvo.semana)
+      if (salvo.fds) setIaFds(salvo.fds)
+      return
+    }
+
+    // Loja que ainda não tem a estrutura nova: aproveita o que estava no campo
+    // antigo em vez de jogar a configuração dela fora.
     const horario = settings?.horario_atendimento?.trim()
     if (horario && horario !== '24h' && horario.includes('-')) {
-      const [from, to] = horario.split('-')
-      setMode('custom')
-      setStart(from.trim().slice(0, 5))
-      setEnd(to.trim().slice(0, 5))
+      const [de, ate] = horario.split('-')
+      const janela = { ativo: true, abre: de.trim().slice(0, 5), fecha: ate.trim().slice(0, 5) }
+      setIaModo('janela')
+      setIaSemana(janela)
+      setIaFds(janela)
     } else {
-      setMode('24h')
+      setIaModo('24h')
     }
   }, [settings?.tenant_id]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -255,8 +268,13 @@ export function StepRules({ onNext }: { onNext: () => void }) {
         await updateTenant({ nome: name.trim() })
       }
 
+      // O campo antigo continua sendo gravado: o painel e os prompts ainda o
+      // leem em alguns lugares, e loja nenhuma pode ficar sem horário no meio
+      // da troca.
       await updateSettings({
-        horario_atendimento: mode === '24h' ? '24h' : `${start}-${end}`,
+        ai_hours: { modo: iaModo, semana: iaSemana, fds: iaFds },
+        horario_atendimento:
+          iaModo === '24h' ? '24h' : iaModo === 'desligado' ? 'desligado' : `${iaSemana.abre}-${iaSemana.fecha}`,
       })
 
       // Os prompts se remontam sozinhos no banco a partir destes dados.
@@ -484,40 +502,54 @@ export function StepRules({ onNext }: { onNext: () => void }) {
 
           <Section
             title="Horário de atendimento da Júlia"
-            hint="Diferente do horário acima: aqui é quando a IA considera que tem gente na loja. Fora dele ela continua respondendo — só avisa que um vendedor humano retorna no próximo expediente."
+            hint="Quando a IA pode responder. Fora dessa janela ela não manda nada — a conversa entra e fica reservada para a equipe assumir quando abrir. Não confunda com o horário da loja lá em cima: aquele é a porta aberta, este é a boca da Júlia."
           >
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Toggle
-                checked={mode === '24h'}
-                onChange={(value) => setMode(value ? '24h' : 'custom')}
-                label="Atendimento 24 horas"
-                description="A IA responde a qualquer hora, todos os dias."
+                checked={iaModo === '24h'}
+                onChange={(value) => value && setIaModo('24h')}
+                label="24 horas"
+                description="Responde a qualquer hora, todos os dias."
               />
               <Toggle
-                checked={mode === 'custom'}
-                onChange={(value) => setMode(value ? 'custom' : '24h')}
-                label="Faixa de horário"
-                description="Defina o período em que a equipe está disponível."
+                checked={iaModo === 'janela'}
+                onChange={(value) => value && setIaModo('janela')}
+                label="Só em certos horários"
+                description="Você escolhe a faixa da semana e a do fim de semana."
+              />
+              <Toggle
+                checked={iaModo === 'desligado'}
+                onChange={(value) => value && setIaModo('desligado')}
+                label="Desligada"
+                description="A IA não responde nunca. Todo cliente vai direto para a equipe."
               />
             </div>
-            {mode === 'custom' && (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Início">
-                  <input
-                    type="time"
-                    value={start}
-                    onChange={(e) => setStart(e.target.value)}
-                    className="w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
-                  />
-                </Field>
-                <Field label="Fim" hint="Pode virar o dia — ex.: das 18:00 às 08:00.">
-                  <input
-                    type="time"
-                    value={end}
-                    onChange={(e) => setEnd(e.target.value)}
-                    className="w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
-                  />
-                </Field>
+
+            {iaModo === 'desligado' && (
+              <InfoNote>
+                Com a IA desligada, nenhum cliente recebe resposta automática. Quem escrever fica esperando um humano
+                — inclusive de madrugada e no fim de semana.
+              </InfoNote>
+            )}
+
+            {iaModo === 'janela' && (
+              <div className="space-y-5">
+                <FaixaDaIA
+                  titulo="De segunda a sexta"
+                  janela={iaSemana}
+                  onChange={setIaSemana}
+                  textoDesligado="A IA não atende em dia de semana."
+                />
+                <FaixaDaIA
+                  titulo="Sábado e domingo"
+                  janela={iaFds}
+                  onChange={setIaFds}
+                  textoDesligado="A IA não atende no fim de semana."
+                />
+                <p className="text-xs text-ink-500">
+                  A faixa pode virar o dia: <span className="font-semibold text-ink-900">das 18:00 às 08:00</span> faz
+                  a Júlia atender só depois que a loja fecha.
+                </p>
               </div>
             )}
           </Section>
@@ -737,5 +769,53 @@ export function StepRules({ onNext }: { onNext: () => void }) {
         </div>
       </StepCard>
     </form>
+  )
+}
+
+/**
+ * Uma faixa de horário da IA. Existe separada porque a semana e o fim de semana
+ * são a mesma coisa duas vezes — e porque desligar o fim de semana inteiro é o
+ * caso mais comum de todos.
+ */
+function FaixaDaIA({
+  titulo,
+  janela,
+  onChange,
+  textoDesligado,
+}: {
+  titulo: string
+  janela: JanelaDaIA
+  onChange: (janela: JanelaDaIA) => void
+  textoDesligado: string
+}) {
+  return (
+    <div className="rounded-2xl border border-ink-200 bg-ink-50/40 p-4">
+      <Toggle
+        checked={janela.ativo}
+        onChange={(ativo) => onChange({ ...janela, ativo })}
+        label={titulo}
+        description={janela.ativo ? 'A Júlia responde nesses dias.' : textoDesligado}
+      />
+      {janela.ativo && (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Começa">
+            <input
+              type="time"
+              value={janela.abre}
+              onChange={(e) => onChange({ ...janela, abre: e.target.value })}
+              className="w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
+            />
+          </Field>
+          <Field label="Termina">
+            <input
+              type="time"
+              value={janela.fecha}
+              onChange={(e) => onChange({ ...janela, fecha: e.target.value })}
+              className="w-full rounded-2xl border border-ink-200 bg-white px-4 py-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/10"
+            />
+          </Field>
+        </div>
+      )}
+    </div>
   )
 }
