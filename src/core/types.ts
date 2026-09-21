@@ -75,6 +75,24 @@ export interface Tenant {
   timezone: string
 }
 
+/** Uma faixa de horário da IA. `ativo: false` significa que nesses dias ela não atende. */
+export interface JanelaDaIA {
+  ativo: boolean
+  abre: string
+  fecha: string
+}
+
+/**
+ * `modo` decide tudo: `24h` ignora as janelas, `desligado` cala a IA sempre, e
+ * `janela` usa `semana` de segunda a sexta e `fds` no sábado e domingo.
+ * A janela pode virar o dia — das 18:00 às 08:00 é válido.
+ */
+export interface HorarioDaIA {
+  modo: '24h' | 'janela' | 'desligado'
+  semana: JanelaDaIA
+  fds: JanelaDaIA
+}
+
 export interface TenantSettings {
   tenant_id: string
   chatwoot_base_url: string | null
@@ -84,6 +102,12 @@ export interface TenantSettings {
   bot_phone: string | null
   google_calendar_id: string | null
   horario_atendimento: string | null
+  /**
+   * Janela em que a Júlia pode responder. Diferente de `stores.business_hours`,
+   * que é a porta da loja aberta: este aqui manda a IA falar ou ficar muda.
+   * Fora da janela ela não responde e a conversa é reservada para o time.
+   */
+  ai_hours: HorarioDaIA | null
   endereco_loja: string | null
   followup_ativo: boolean
   team_atendimento_id: number | null

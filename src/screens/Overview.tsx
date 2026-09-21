@@ -56,8 +56,23 @@ export function Overview() {
   }, [cars])
 
   const connected = Boolean(channel?.evolution_instance && channel.ativo)
+  // A estrutura nova manda; o campo antigo fica de reserva para loja que ainda
+  // não salvou pelo painel depois da mudança.
+  const horarioDaIA = settings?.ai_hours
   const schedule = settings?.horario_atendimento?.trim()
-  const scheduleLabel = !schedule || schedule === '24h' ? '24 horas por dia' : `das ${schedule.replace('-', ' às ')}`
+  const scheduleLabel = (() => {
+    if (horarioDaIA?.modo === 'desligado') return 'desligada'
+    if (horarioDaIA?.modo === '24h') return '24 horas por dia'
+    if (horarioDaIA?.modo === 'janela') {
+      const { semana, fds } = horarioDaIA
+      const semanaTexto = semana?.ativo ? `das ${semana.abre} às ${semana.fecha}` : 'não atende'
+      const fdsTexto = fds?.ativo ? `das ${fds.abre} às ${fds.fecha}` : 'não atende'
+      return semanaTexto === fdsTexto ? semanaTexto : `${semanaTexto} na semana, ${fdsTexto} no fim de semana`
+    }
+    if (!schedule || schedule === '24h') return '24 horas por dia'
+    if (schedule === 'desligado') return 'desligada'
+    return `das ${schedule.replace('-', ' às ')}`
+  })()
 
   const checklist = [
     { label: 'Perfil e regras da loja', done: Boolean(store?.cnpj && agents.length > 0) },
