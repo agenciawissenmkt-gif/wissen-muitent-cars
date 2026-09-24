@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../core/auth'
+import { ACCESS_ERROR_TEXT, initialAccessError } from '../core/access'
 import { Button } from '../ui/Button'
 import { Logo } from '../ui/Logo'
 import { CalendarIcon, CarIcon, GoogleIcon, SparkIcon, WhatsappIcon } from '../ui/icons'
@@ -14,7 +15,7 @@ const HIGHLIGHTS = [
 export function Login() {
   const { signInWithGoogle } = useAuth()
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(initialAccessError ? ACCESS_ERROR_TEXT[initialAccessError] : null)
 
   async function handleLogin() {
     setLoading(true)
