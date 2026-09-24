@@ -101,6 +101,13 @@ export const WhatsappIcon = (p: IconProps) => (
   </svg>
 )
 
+export const LockIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+    <path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" />
+  </svg>
+)
+
 export const LogoutIcon = (p: IconProps) => (
   <svg {...base(p)}>
     <path d="M9 20H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h3M16 16l4-4-4-4M20 12H9" />

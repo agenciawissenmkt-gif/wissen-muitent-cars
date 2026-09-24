@@ -20,6 +20,8 @@ interface TenantValue {
   agents: AgentPrompt[]
   salespeople: Salesperson[]
   google: GoogleCredentials | null
+  /** Loja bloqueada pelo Painel Empresarial (inadimplência, manutenção…). */
+  block: StoreBlock | null
   loading: boolean
   error: string | null
   refresh: () => Promise<void>
@@ -27,6 +29,11 @@ interface TenantValue {
   updateTenant: (patch: Partial<Tenant>) => Promise<void>
   updateSettings: (patch: Partial<TenantSettings>) => Promise<void>
   updateAgent: (type: AgentType, systemPrompt: string) => Promise<void>
+}
+
+export interface StoreBlock {
+  reason: string
+  blocked_at: string
 }
 
 const TenantContext = createContext<TenantValue | null>(null)
@@ -40,6 +47,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [agents, setAgents] = useState<AgentPrompt[]>([])
   const [salespeople, setSalespeople] = useState<Salesperson[]>([])
   const [google, setGoogle] = useState<GoogleCredentials | null>(null)
+  const [block, setBlock] = useState<StoreBlock | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -71,6 +79,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       setAgents([])
       setSalespeople([])
       setGoogle(null)
+      setBlock(null)
       jaCarregou.current = false
       setLoading(false)
       return
@@ -103,6 +112,12 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       if (!current?.tenant_id) throw new Error('Não foi possível vincular a loja a um tenant.')
 
       const tenantId = current.tenant_id
+
+      // Bloqueio feito no Painel Empresarial. Com a loja bloqueada, o RLS já nega
+      // o resto dos dados; aqui só lemos o motivo para mostrar ao lojista. Se a
+      // migração 0039 ainda não foi aplicada, a tabela não existe e seguimos normal.
+      const blockRes = await supabase.from('store_access_blocks').select('reason,blocked_at').eq('tenant_id', tenantId).maybeSingle()
+      setBlock(blockRes.error ? null : ((blockRes.data as StoreBlock | null) ?? null))
 
       const [tenantRes, settingsRes, channelRes, agentsRes, peopleRes, googleRes] = await Promise.all([
         supabase.from('tenants').select('*').eq('id', tenantId).maybeSingle(),
@@ -218,6 +233,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       agents,
       salespeople,
       google,
+      block,
       loading,
       error,
       refresh: load,
@@ -226,7 +242,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       updateSettings,
       updateAgent,
     }),
-    [store, tenant, settings, channel, agents, salespeople, google, loading, error, load, updateStore, updateTenant, updateSettings, updateAgent],
+    [store, tenant, settings, channel, agents, salespeople, google, block, loading, error, load, updateStore, updateTenant, updateSettings, updateAgent],
   )
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>

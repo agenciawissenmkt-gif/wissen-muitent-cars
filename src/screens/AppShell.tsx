@@ -5,7 +5,7 @@ import { useAuth } from '../core/auth'
 import { useTenant } from '../core/tenant'
 import { Logo } from '../ui/Logo'
 import { Spinner } from '../ui/Button'
-import { CarIcon, ChartIcon, LogoutIcon, MenuIcon, SettingsIcon } from '../ui/icons'
+import { CarIcon, ChartIcon, LockIcon, LogoutIcon, MenuIcon, SettingsIcon } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -82,9 +82,46 @@ function UserCard() {
   )
 }
 
+/**
+ * Loja bloqueada no Painel Empresarial: nada de estoque nem configurações até a
+ * equipe Wissen Cars desbloquear. Os dados continuam guardados.
+ */
+function SuspendedNotice({ reason }: { reason: string }) {
+  const { signOut } = useAuth()
+  return (
+    <div className="mx-auto grid min-h-[70vh] max-w-lg place-items-center p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full rounded-3xl border border-ink-100 bg-white p-8 text-center shadow-xl shadow-brand-900/5"
+      >
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-50 text-amber-600">
+          <LockIcon className="size-7" />
+        </span>
+        <h1 className="mt-5 text-xl font-extrabold text-ink-900">Sua conta está suspensa</h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-500">
+          O acesso ao painel e o atendimento automático estão pausados. Nenhum dado da sua loja foi apagado.
+        </p>
+        <p className="mt-4 rounded-2xl bg-ink-50 px-4 py-3 text-sm text-ink-700">
+          <span className="block text-xs font-bold uppercase tracking-wider text-ink-400">Motivo</span>
+          {reason}
+        </p>
+        <p className="mt-4 text-sm text-ink-500">Fale com a equipe Wissen Cars para regularizar e reativar.</p>
+        <button
+          type="button"
+          onClick={() => void signOut()}
+          className="mt-6 inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold text-ink-600 hover:bg-ink-100"
+        >
+          <LogoutIcon className="size-4" /> Sair
+        </button>
+      </motion.div>
+    </div>
+  )
+}
+
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false)
-  const { loading, error } = useTenant()
+  const { loading, error, block } = useTenant()
   const location = useLocation()
 
   return (
@@ -150,6 +187,8 @@ export function AppShell() {
             <div className="grid h-[60vh] place-items-center text-brand-600">
               <Spinner className="size-8" />
             </div>
+          ) : block ? (
+            <SuspendedNotice reason={block.reason} />
           ) : error ? (
             <div className="mx-auto max-w-2xl p-6">
               <div className="rounded-3xl border border-red-200 bg-red-50 p-6">
