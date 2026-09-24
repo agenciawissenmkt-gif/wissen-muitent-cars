@@ -351,6 +351,7 @@ create index if not exists admin_audit_log_at_idx on public.admin_audit_log (at 
 create or replace function public.admin_audit_log_is_append_only()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   raise exception 'admin_audit_log é somente inserção';
