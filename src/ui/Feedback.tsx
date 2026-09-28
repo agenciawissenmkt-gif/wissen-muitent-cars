@@ -7,7 +7,7 @@ import { CAR_STATUS_LABEL } from '../core/types'
 
 const STATUS_STYLE: Record<CarStatus, string> = {
   ativo: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  reservado: 'bg-amber-50 text-amber-700 ring-amber-600/20',
+  reservado: 'bg-blue-50 text-blue-900 ring-blue-900/20',
   vendido: 'bg-ink-100 text-ink-500 ring-ink-500/20',
 }
 

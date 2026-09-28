@@ -24,6 +24,8 @@ interface Props {
   car: Car | null
   onClose: () => void
   onSave: (draft: CarDraft, photos: PhotoItem[], carId?: string) => Promise<unknown>
+  /** Excluir de vez (cadastro errado). Venda usa o botão Vendido do cartão. */
+  onDelete?: (car: Car) => void
 }
 
 type FormState = Record<string, string> & { status: CarStatus }
@@ -52,7 +54,7 @@ const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
 const num = (value: string) => (value.trim() === '' ? null : Number(value.replace(/\./g, '').replace(',', '.')))
 const text = (value: string) => (value.trim() === '' ? null : value.trim())
 
-export function CarFormModal({ open, car, onClose, onSave }: Props) {
+export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const [form, setForm] = useState<FormState>({ ...EMPTY_TEXT, status: 'ativo' } as FormState)
   const [flags, setFlags] = useState<Record<string, boolean>>({ accepts_trade: true })
   const [photos, setPhotos] = useState<PhotoItem[]>([])
@@ -163,6 +165,11 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
       }
       footer={
         <>
+          {car && onDelete && (
+            <button type="button" onClick={() => onDelete(car)} disabled={saving} className="mr-auto text-sm font-semibold text-red-600 hover:underline">
+              Excluir anúncio
+            </button>
+          )}
           <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
             Cancelar
           </Button>
@@ -277,7 +284,7 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Status do anúncio" className="sm:col-span-2">
               <div className="flex flex-wrap gap-2">
-                {(Object.keys(CAR_STATUS_LABEL) as CarStatus[]).map((status) => (
+                {(Object.keys(CAR_STATUS_LABEL) as CarStatus[]).filter((status) => status !== 'vendido').map((status) => (
                   <button
                     key={status}
                     type="button"

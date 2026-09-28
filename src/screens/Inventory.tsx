@@ -9,14 +9,15 @@ import { CarCard } from './inventory/CarCard'
 import { CarFormModal } from './inventory/CarFormModal'
 import { useCars } from './inventory/useCars'
 
-type Filter = 'todos' | CarStatus
+type Filter = 'todos' | Exclude<CarStatus, 'vendido'>
 
-const FILTERS: Filter[] = ['todos', 'ativo', 'reservado', 'vendido']
+// Carro vendido sai do painel: fica no banco só para os relatórios de vendas.
+const FILTERS: Filter[] = ['todos', 'ativo', 'reservado']
 
 export function Inventory() {
   const { store } = useTenant()
   const { toast } = useToast()
-  const { cars, loading, error, saveCar, deleteCar } = useCars({
+  const { cars: allCars, loading, error, saveCar, deleteCar, markSold, toggleDeposit } = useCars({
     tenantId: store?.tenant_id ?? undefined,
     storeId: store?.id,
   })
@@ -27,6 +28,11 @@ export function Inventory() {
   const [editing, setEditing] = useState<Car | null>(null)
   const [deleting, setDeleting] = useState<Car | null>(null)
   const [deletingBusy, setDeletingBusy] = useState(false)
+  const [selling, setSelling] = useState<Car | null>(null)
+  const [sellingBusy, setSellingBusy] = useState(false)
+  const [depositBusy, setDepositBusy] = useState<string | null>(null)
+
+  const cars = useMemo(() => allCars.filter((car) => car.status !== 'vendido'), [allCars])
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -43,7 +49,6 @@ export function Inventory() {
       todos: cars.length,
       ativo: cars.filter((car) => car.status === 'ativo').length,
       reservado: cars.filter((car) => car.status === 'reservado').length,
-      vendido: cars.filter((car) => car.status === 'vendido').length,
     } as Record<Filter, number>
   }, [cars])
 
@@ -57,13 +62,44 @@ export function Inventory() {
     setFormOpen(true)
   }
 
+  async function confirmSold() {
+    if (!selling) return
+    setSellingBusy(true)
+    try {
+      await markSold(selling)
+      toast('Parabéns pela venda! O carro saiu do painel e a IA não oferece mais.')
+      setSelling(null)
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Não foi possível marcar como vendido.', 'error')
+    } finally {
+      setSellingBusy(false)
+    }
+  }
+
+  async function handleDeposit(car: Car) {
+    setDepositBusy(car.id)
+    try {
+      const next = await toggleDeposit(car)
+      toast(
+        next === 'reservado'
+          ? 'Sinal registrado. A IA não oferece mais este carro; ele continua no painel.'
+          : 'Venda retomada. O carro voltou a ficar disponível para a IA.',
+      )
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Não foi possível atualizar o carro.', 'error')
+    } finally {
+      setDepositBusy(null)
+    }
+  }
+
   async function confirmDelete() {
     if (!deleting) return
     setDeletingBusy(true)
     try {
       await deleteCar(deleting)
-      toast('Veículo excluído do estoque.')
+      toast('Anúncio excluído.')
       setDeleting(null)
+      setFormOpen(false)
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Não foi possível excluir o veículo.', 'error')
     } finally {
@@ -146,7 +182,7 @@ export function Inventory() {
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((car) => (
-              <CarCard key={car.id} car={car} onEdit={openEdit} onDelete={setDeleting} />
+              <CarCard key={car.id} car={car} onEdit={openEdit} onSold={setSelling} onDeposit={(c) => void handleDeposit(c)} busy={depositBusy === car.id} />
             ))}
           </div>
         )}
@@ -156,6 +192,7 @@ export function Inventory() {
         open={formOpen}
         car={editing}
         onClose={() => setFormOpen(false)}
+        onDelete={(car) => setDeleting(car)}
         onSave={async (draft, photos, carId) => {
           const id = await saveCar(draft, photos, carId)
           toast(carId ? 'Anúncio atualizado com sucesso.' : 'Veículo cadastrado no estoque.')
@@ -164,10 +201,37 @@ export function Inventory() {
       />
 
       <Modal
+        open={Boolean(selling)}
+        onClose={() => setSelling(null)}
+        size="md"
+        title="Tem certeza que este carro foi vendido?"
+        subtitle="Esta ação não pode ser desfeita."
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSelling(null)} disabled={sellingBusy}>
+              Cancelar
+            </Button>
+            <Button variant="success" onClick={() => void confirmSold()} loading={sellingBusy}>
+              Sim, foi vendido
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm leading-relaxed text-ink-600">
+          O <strong className="text-ink-900">{[selling?.brand, selling?.model].filter(Boolean).join(' ')}</strong> sai do
+          painel, as fotos dele são apagadas e a IA deixa de oferecer. A venda entra no relatório semanal da loja.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-ink-500">
+          O cliente só deu sinal e ainda pode desistir? Use o botão <strong className="text-blue-900">Deu sinal</strong>: o carro
+          fica guardado no painel e pode voltar a ficar disponível.
+        </p>
+      </Modal>
+
+      <Modal
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         size="md"
-        title="Excluir veículo"
+        title="Excluir anúncio"
         subtitle="Esta ação não pode ser desfeita."
         footer={
           <>
@@ -184,7 +248,8 @@ export function Inventory() {
           O anúncio{' '}
           <strong className="text-ink-900">{[deleting?.brand, deleting?.model].filter(Boolean).join(' ')}</strong> e
           todas as suas fotos
-          serão removidos do estoque e deixarão de ser oferecidos pela IA.
+          serão apagados. Use só para cadastro errado: se o carro foi vendido, use o botão Vendido, para a venda contar no
+          relatório.
         </p>
       </Modal>
     </div>

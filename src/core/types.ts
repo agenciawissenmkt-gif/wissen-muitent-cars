@@ -214,7 +214,7 @@ export interface Car {
 
 export const CAR_STATUS_LABEL: Record<CarStatus, string> = {
   ativo: 'Disponível',
-  reservado: 'Reservado',
+  reservado: 'Sinal recebido',
   vendido: 'Vendido',
 }
 

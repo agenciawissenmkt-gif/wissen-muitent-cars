@@ -203,5 +203,34 @@ export function useCars({ tenantId, storeId }: Options) {
     [refresh],
   )
 
-  return { cars, loading, error, refresh, saveCar, deleteCar }
+  /**
+   * Vendido: o carro sai do painel e da IA. A linha fica no banco com status
+   * 'vendido' (e sold_at) só para os relatórios de vendas; as fotos são apagadas.
+   */
+  const markSold = useCallback(
+    async (car: Car) => {
+      const { error: updateError } = await supabase.from('cars').update({ status: 'vendido', cover_url: null }).eq('id', car.id)
+      if (updateError) throw updateError
+
+      const paths = car.car_photos.map((photo) => photo.storage_path).filter((path): path is string => Boolean(path))
+      await supabase.from('car_photos').delete().eq('car_id', car.id)
+      if (paths.length) await supabase.storage.from(CAR_PHOTOS_BUCKET).remove(paths)
+      await refresh()
+    },
+    [refresh],
+  )
+
+  /** Cliente deu sinal: tira da IA sem apagar. Clicar de novo devolve para Disponível. */
+  const toggleDeposit = useCallback(
+    async (car: Car) => {
+      const next = car.status === 'reservado' ? 'ativo' : 'reservado'
+      const { error: updateError } = await supabase.from('cars').update({ status: next }).eq('id', car.id)
+      if (updateError) throw updateError
+      await refresh()
+      return next
+    },
+    [refresh],
+  )
+
+  return { cars, loading, error, refresh, saveCar, deleteCar, markSold, toggleDeposit }
 }

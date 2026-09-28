@@ -95,7 +95,7 @@ export function Overview() {
           icon={<CarIcon />}
           label="Total em estoque"
           value={loading ? '—' : String(cars.length)}
-          detail={`${stats.reserved.length} reservado(s) · ${stats.sold.length} vendido(s)`}
+          detail={`${stats.reserved.length} com sinal · ${stats.sold.length} vendido(s)`}
         />
         <Metric
           icon={<SparkIcon />}
