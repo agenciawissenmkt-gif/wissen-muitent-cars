@@ -7,8 +7,9 @@
 // se a IA chutar, o chute entra no estoque que a Julia le e vira resposta
 // errada para o cliente no WhatsApp.
 
+import { randomUUID } from 'node:crypto'
 import { Router } from 'express'
-import { HttpError } from '../lib/db.js'
+import { db, HttpError } from '../lib/db.js'
 import { requireTenant, route } from '../lib/auth.js'
 
 const router = Router()
@@ -207,6 +208,30 @@ const INSTRUCOES = [
   '- Padrao brasileiro: cv para potencia, kgfm para torque.',
 ].join('\n')
 
+/**
+ * Consumo da ficha: uma linha em ai_usage por chamada a OpenAI, com
+ * agent_type 'ficha_tecnica'. O Painel Empresarial soma isso por loja (tokens e
+ * reais). A chave `ficha:<pedido>:<chamada>` conta cada ficha gerada uma vez,
+ * mesmo quando ela precisou de uma segunda pergunta.
+ */
+async function registrarConsumo(tenantId, pedidoId, chamadas) {
+  if (!chamadas.length) return
+  const linhas = chamadas.map((uso, i) => ({
+    tenant_id: tenantId,
+    model: MODELO.toLowerCase(),
+    agent_type: 'ficha_tecnica',
+    prompt_tokens: Math.max(0, Number(uso?.prompt_tokens) || 0),
+    completion_tokens: Math.max(0, Number(uso?.completion_tokens) || 0),
+    execution_id: `ficha:${pedidoId}:${i + 1}`,
+  }))
+  try {
+    await db.insert('ai_usage', linhas)
+  } catch (erro) {
+    // Registro de custo nunca pode impedir a loja de receber a ficha.
+    console.error('[ficha] nao consegui registrar o consumo:', erro?.message || erro)
+  }
+}
+
 function schemaDe(campos) {
   const properties = Object.fromEntries(campos.map((c) => [c, CAMPOS[c]]))
   return { type: 'object', properties, required: campos, additionalProperties: false }
@@ -215,7 +240,7 @@ function schemaDe(campos) {
 router.post(
   '/',
   route(async (req, res) => {
-    await requireTenant(req)
+    const { tenant } = await requireTenant(req)
 
     const { brand, model, version } = req.body || {}
     const ano = req.body?.model_year || req.body?.year
@@ -228,6 +253,8 @@ router.post(
     const controle = new AbortController()
     const inicio = Date.now()
     const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS)
+    const pedidoId = randomUUID()
+    const consumo = []
 
     async function perguntar(campos, pedidoExtra) {
       const corpoBase = {
@@ -268,6 +295,7 @@ router.post(
       }
 
       const corpo = await resposta.json()
+      if (corpo?.usage) consumo.push(corpo.usage)
       const bruto = corpo?.choices?.[0]?.message?.content
       if (!bruto) throw new HttpError(502, 'A IA devolveu resposta vazia.')
       try {
@@ -304,6 +332,7 @@ router.post(
       throw new HttpError(502, 'Nao consegui falar com a IA agora.')
     } finally {
       clearTimeout(relogio)
+      await registrarConsumo(tenant.id, pedidoId, consumo)
     }
 
     res.json({
