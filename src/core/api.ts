@@ -153,13 +153,14 @@ export function gerarFichaTecnica(input: {
   tenant_id: string
   brand: string
   model: string
-  year?: number | string
+  model_year?: number | string
   version?: string
 }) {
   return request<{
     ficha: Record<string, string | number>
     preenchidos: number
     total: number
+    faltaram?: string[]
     modelo_usado: string
   }>('/ficha', {
     method: 'POST',

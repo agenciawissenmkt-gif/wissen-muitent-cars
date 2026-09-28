@@ -193,6 +193,13 @@ export interface Car {
   air_conditioning: string | null
   steering: string | null
   electric_windows: string | null
+  sunroof: string | null
+  carplay_android_auto: string | null
+  trunk_liters: number | null
+  leather_seats: string | null
+  keyless_entry: string | null
+  parking_sensor: string | null
+  rear_camera: string | null
   ipva_paid: boolean | null
   licensed: boolean | null
   single_owner: boolean | null
@@ -249,4 +256,8 @@ export const TRANSMISSIONS = ['Manual', 'Automático', 'Automatizado', 'CVT'] as
 export const FUELS = ['Flex', 'Gasolina', 'Etanol', 'Diesel', 'Híbrido', 'Elétrico', 'GNV'] as const
 export const BODY_TYPES = ['Hatch', 'Sedã', 'SUV', 'Picape', 'Utilitário', 'Coupé', 'Conversível', 'Minivan'] as const
 export const TRACTIONS = ['Dianteira', 'Traseira', '4x4', 'AWD'] as const
+export const SUNROOFS = ['Não possui', 'Teto solar', 'Panorâmico'] as const
+export const CARPLAY_OPTIONS = ['Sem fio', 'Com fio', 'Não possui'] as const
+export const PARKING_SENSORS = ['Traseiro', 'Dianteiro e traseiro', 'Não possui'] as const
+export const YES_NO = ['Sim', 'Não'] as const
 export const PARTNER_BANKS = ['BV', 'Santander', 'Itaú', 'Bradesco', 'Pan'] as const

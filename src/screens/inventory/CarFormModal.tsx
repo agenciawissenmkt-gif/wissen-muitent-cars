@@ -5,9 +5,13 @@ import { CheckPill, Field, Input, Select, Textarea, Toggle } from '../../ui/Fiel
 import {
   BODY_TYPES,
   CAR_STATUS_LABEL,
+  CARPLAY_OPTIONS,
   FUELS,
+  PARKING_SENSORS,
+  SUNROOFS,
   TRACTIONS,
   TRANSMISSIONS,
+  YES_NO,
   type Car,
   type CarStatus,
 } from '../../core/types'
@@ -24,11 +28,14 @@ interface Props {
 
 type FormState = Record<string, string> & { status: CarStatus }
 
+// O cadastro pede so o ano do modelo; ao salvar, o mesmo valor vai para `year`,
+// que e o ano que a busca e a Julia usam.
 const TEXT_FIELDS = [
-  'brand', 'model', 'version', 'year', 'model_year', 'color', 'doors', 'transmission', 'body_type',
+  'brand', 'model', 'version', 'model_year', 'color', 'doors', 'transmission', 'body_type',
   'fuel', 'mileage_km', 'price_brl', 'engine', 'cylinders', 'horsepower', 'torque',
   'acceleration_0_100', 'aspiration', 'traction', 'air_conditioning', 'steering', 'electric_windows',
-  'description',
+  'sunroof', 'carplay_android_auto', 'trunk_liters', 'leather_seats', 'keyless_entry', 'parking_sensor',
+  'rear_camera', 'description',
 ] as const
 
 const BOOL_FIELDS = ['ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade'] as const
@@ -62,6 +69,8 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
         const value = car[field as keyof Car]
         next[field] = value === null || value === undefined ? '' : String(value)
       }
+      // Cadastro antigo com so o ano de fabricacao: mostra ele como ano do modelo.
+      if (!next.model_year && car.year) next.model_year = String(car.year)
       setForm({ ...next, status: car.status } as FormState)
       setFlags(Object.fromEntries(BOOL_FIELDS.map((field) => [field, Boolean(car[field])])))
       setPhotos(
@@ -97,7 +106,7 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
       brand: text(form.brand),
       model: form.model.trim(),
       version: text(form.version),
-      year: num(form.year),
+      year: num(form.model_year),
       model_year: num(form.model_year),
       color: text(form.color),
       doors: num(form.doors),
@@ -116,6 +125,13 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
       air_conditioning: text(form.air_conditioning),
       steering: text(form.steering),
       electric_windows: text(form.electric_windows),
+      sunroof: text(form.sunroof),
+      carplay_android_auto: text(form.carplay_android_auto),
+      trunk_liters: num(form.trunk_liters),
+      leather_seats: text(form.leather_seats),
+      keyless_entry: text(form.keyless_entry),
+      parking_sensor: text(form.parking_sensor),
+      rear_camera: text(form.rear_camera),
       ipva_paid: flag('ipva_paid'),
       licensed: flag('licensed'),
       single_owner: flag('single_owner'),
@@ -163,7 +179,8 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
         </section>
 
         <section>
-          <h3 className="mb-3 text-sm font-bold text-ink-900">Identificação</h3>
+          <h3 className="mb-1 text-sm font-bold text-ink-900">Identificação</h3>
+          <p className="mb-3 text-xs text-ink-500">Dados deste carro. Preenchidos por você, a IA não mexe aqui.</p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Input label="Marca" value={form.brand} onChange={(e) => set('brand', e.target.value)} placeholder="Toyota" />
             <Input label="Modelo" required value={form.model} onChange={(e) => set('model', e.target.value)} placeholder="Corolla" />
@@ -174,8 +191,17 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
               onChange={(e) => set('version', e.target.value)}
               placeholder="XEi 2.0 Flex 16V Aut."
             />
-            <Input label="Ano de fabricação" inputMode="numeric" value={form.year} onChange={(e) => set('year', e.target.value)} placeholder="2022" />
             <Input label="Ano do modelo" inputMode="numeric" value={form.model_year} onChange={(e) => set('model_year', e.target.value)} placeholder="2023" />
+            <Input label="Cor" value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="Prata" />
+            <Input label="Quilometragem" inputMode="numeric" value={form.mileage_km} onChange={(e) => set('mileage_km', e.target.value)} placeholder="45000" hint="Somente números" />
+            <Input
+              label="Preço"
+              prefix="R$"
+              inputMode="decimal"
+              value={form.price_brl}
+              onChange={(e) => set('price_brl', e.target.value)}
+              placeholder="129900"
+            />
           </div>
         </section>
 
@@ -183,7 +209,7 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
           <BotaoFichaIA
             brand={form.brand}
             model={form.model}
-            year={form.year}
+            modelYear={form.model_year}
             version={form.version}
             onPreencher={(ficha) =>
               setForm((atual) => ({
@@ -194,15 +220,29 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
           />
           <h3 className="mb-3 text-sm font-bold text-ink-900">Ficha técnica</h3>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input label="Quilometragem" inputMode="numeric" value={form.mileage_km} onChange={(e) => set('mileage_km', e.target.value)} placeholder="45000" hint="Somente números" />
-            <Input label="Cor" value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="Prata" />
-            <Input label="Portas" inputMode="numeric" value={form.doors} onChange={(e) => set('doors', e.target.value)} placeholder="4" />
+            <Input label="Motor" value={form.engine} onChange={(e) => set('engine', e.target.value)} placeholder="2.0 16V" />
+            <Input label="Potência" value={form.horsepower} onChange={(e) => set('horsepower', e.target.value)} placeholder="177 cv" />
+            <Input label="Torque" value={form.torque} onChange={(e) => set('torque', e.target.value)} placeholder="21,4 kgfm" />
+            <Input label="0 a 100 km/h" value={form.acceleration_0_100} onChange={(e) => set('acceleration_0_100', e.target.value)} placeholder="9,3 s" />
             <Select label="Câmbio" options={TRANSMISSIONS} placeholder="Selecione" value={form.transmission} onChange={(e) => set('transmission', e.target.value)} />
             <Select label="Combustível" options={FUELS} placeholder="Selecione" value={form.fuel} onChange={(e) => set('fuel', e.target.value)} />
             <Select label="Carroceria" options={BODY_TYPES} placeholder="Selecione" value={form.body_type} onChange={(e) => set('body_type', e.target.value)} />
-            <Input label="Motor" value={form.engine} onChange={(e) => set('engine', e.target.value)} placeholder="2.0 16V" />
-            <Input label="Potência" value={form.horsepower} onChange={(e) => set('horsepower', e.target.value)} placeholder="177 cv" />
             <Select label="Tração" options={TRACTIONS} placeholder="Selecione" value={form.traction} onChange={(e) => set('traction', e.target.value)} />
+            <Input label="Portas" inputMode="numeric" value={form.doors} onChange={(e) => set('doors', e.target.value)} placeholder="4" />
+            <Input label="Porta-malas" inputMode="numeric" value={form.trunk_liters} onChange={(e) => set('trunk_liters', e.target.value)} placeholder="470" hint="Em litros" />
+          </div>
+
+          <h3 className="mb-3 mt-6 text-sm font-bold text-ink-900">Conforto e tecnologia</h3>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <Select label="Teto solar" options={SUNROOFS} placeholder="Selecione" value={form.sunroof} onChange={(e) => set('sunroof', e.target.value)} />
+            <Select label="CarPlay / Android Auto" options={CARPLAY_OPTIONS} placeholder="Selecione" value={form.carplay_android_auto} onChange={(e) => set('carplay_android_auto', e.target.value)} />
+            <Select label="Banco de couro" options={YES_NO} placeholder="Selecione" value={form.leather_seats} onChange={(e) => set('leather_seats', e.target.value)} />
+            <Select label="Chave presencial" options={YES_NO} placeholder="Selecione" value={form.keyless_entry} onChange={(e) => set('keyless_entry', e.target.value)} />
+            <Select label="Sensor de estacionamento" options={PARKING_SENSORS} placeholder="Selecione" value={form.parking_sensor} onChange={(e) => set('parking_sensor', e.target.value)} />
+            <Select label="Câmera de ré" options={YES_NO} placeholder="Selecione" value={form.rear_camera} onChange={(e) => set('rear_camera', e.target.value)} />
+            <Input label="Ar-condicionado" value={form.air_conditioning} onChange={(e) => set('air_conditioning', e.target.value)} placeholder="Dual zone" />
+            <Input label="Direção" value={form.steering} onChange={(e) => set('steering', e.target.value)} placeholder="Elétrica" />
+            <Input label="Vidros elétricos" value={form.electric_windows} onChange={(e) => set('electric_windows', e.target.value)} placeholder="4 portas" />
           </div>
 
           <details className="group mt-4 rounded-2xl border border-ink-200 bg-ink-50/50 p-4">
@@ -211,17 +251,12 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
                 <svg viewBox="0 0 20 20" className="size-4 transition-transform group-open:rotate-90" fill="none" aria-hidden="true">
                   <path d="m7.5 5 5 5-5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Mais detalhes técnicos (a IA usa na apresentação)
+                Mais detalhes do motor
               </span>
             </summary>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Input label="Cilindros" value={form.cylinders} onChange={(e) => set('cylinders', e.target.value)} placeholder="4" />
-              <Input label="Torque" value={form.torque} onChange={(e) => set('torque', e.target.value)} placeholder="21,4 kgfm" />
-              <Input label="0 a 100 km/h" value={form.acceleration_0_100} onChange={(e) => set('acceleration_0_100', e.target.value)} placeholder="9,3 s" />
+              <Input label="Cilindros" value={form.cylinders} onChange={(e) => set('cylinders', e.target.value)} placeholder="4 cilindros" />
               <Input label="Aspiração" value={form.aspiration} onChange={(e) => set('aspiration', e.target.value)} placeholder="Turbo" />
-              <Input label="Ar-condicionado" value={form.air_conditioning} onChange={(e) => set('air_conditioning', e.target.value)} placeholder="Digital dual zone" />
-              <Input label="Direção" value={form.steering} onChange={(e) => set('steering', e.target.value)} placeholder="Elétrica" />
-              <Input label="Vidros elétricos" value={form.electric_windows} onChange={(e) => set('electric_windows', e.target.value)} placeholder="Quatro portas" />
             </div>
           </details>
         </section>
@@ -240,15 +275,7 @@ export function CarFormModal({ open, car, onClose, onSave }: Props) {
         <section>
           <h3 className="mb-3 text-sm font-bold text-ink-900">Comercial</h3>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Preço"
-              prefix="R$"
-              inputMode="decimal"
-              value={form.price_brl}
-              onChange={(e) => set('price_brl', e.target.value)}
-              placeholder="129900"
-            />
-            <Field label="Status do anúncio">
+            <Field label="Status do anúncio" className="sm:col-span-2">
               <div className="flex flex-wrap gap-2">
                 {(Object.keys(CAR_STATUS_LABEL) as CarStatus[]).map((status) => (
                   <button

@@ -26,6 +26,13 @@ export interface CarDraft {
   air_conditioning: string | null
   steering: string | null
   electric_windows: string | null
+  sunroof: string | null
+  carplay_android_auto: string | null
+  trunk_liters: number | null
+  leather_seats: string | null
+  keyless_entry: string | null
+  parking_sensor: string | null
+  rear_camera: string | null
   ipva_paid: boolean
   licensed: boolean
   single_owner: boolean

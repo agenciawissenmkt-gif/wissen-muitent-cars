@@ -9,7 +9,7 @@
   ],
   "functions": {
     "api/index.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     }
   }
 }
