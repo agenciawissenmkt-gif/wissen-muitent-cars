@@ -75,6 +75,9 @@ export function useCars({ tenantId, storeId }: Options) {
       .select('*, car_photos(*)')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
+      // Desempate fixo: carros importados juntos têm o mesmo created_at e, sem isso,
+      // o banco devolvia os empatados em outra ordem depois de cada alteração.
+      .order('id', { ascending: true })
 
     if (queryError) {
       setError(queryError.message)
@@ -226,10 +229,11 @@ export function useCars({ tenantId, storeId }: Options) {
       const next = car.status === 'reservado' ? 'ativo' : 'reservado'
       const { error: updateError } = await supabase.from('cars').update({ status: next }).eq('id', car.id)
       if (updateError) throw updateError
-      await refresh()
+      // Troca só o status daquele carro, no mesmo lugar -- sem recarregar a lista.
+      setCars((current) => current.map((item) => (item.id === car.id ? { ...item, status: next } : item)))
       return next
     },
-    [refresh],
+    [],
   )
 
   return { cars, loading, error, refresh, saveCar, deleteCar, markSold, toggleDeposit }
