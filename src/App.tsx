@@ -10,6 +10,7 @@ import { Login } from './screens/Login'
 import { Inventory } from './screens/Inventory'
 import { Overview } from './screens/Overview'
 import { Implementation } from './screens/Implementation'
+import { Reports } from './screens/Reports'
 
 function SetupNotice() {
   return (
@@ -51,6 +52,7 @@ function Gate() {
         <Route element={<AppShell />}>
           <Route path="/estoque" element={<Inventory />} />
           <Route path="/visao-geral" element={<Overview />} />
+          <Route path="/relatorios" element={<Reports />} />
           <Route path="/implementacao" element={<Implementation />} />
           <Route path="*" element={<Navigate to="/estoque" replace />} />
         </Route>

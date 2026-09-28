@@ -171,3 +171,18 @@ export const ChatwootMark = (p: IconProps) => (
     />
   </svg>
 )
+
+export const MailIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" />
+    <path d="m4 7 8 6 8-6" />
+  </svg>
+)
+
+export const ReportIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M7 3.5h7l4.5 4.5v11A1.5 1.5 0 0 1 17 20.5H7A1.5 1.5 0 0 1 5.5 19V5A1.5 1.5 0 0 1 7 3.5Z" />
+    <path d="M13.5 3.5V8h5" />
+    <path d="M9 16v-2.5M12 16v-5M15 16v-3.5" />
+  </svg>
+)
