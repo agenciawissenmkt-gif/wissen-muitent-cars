@@ -6,6 +6,7 @@ import chatwootRoutes from './routes/chatwoot.js'
 import evolutionRoutes from './routes/evolution.js'
 import provisioningRoutes from './routes/provisioning.js'
 import fichaRoutes from './routes/ficha.js'
+import internoRoutes from './routes/interno.js'
 
 /**
  * Back-end de provisionamento do Wissen Cars.
@@ -44,6 +45,7 @@ app.use('/api/chatwoot', chatwootRoutes)
 app.use('/api/evolution', evolutionRoutes)
 app.use('/api/provisioning', provisioningRoutes)
 app.use('/api/ficha', fichaRoutes)
+app.use('/api/interno', internoRoutes)
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' })
