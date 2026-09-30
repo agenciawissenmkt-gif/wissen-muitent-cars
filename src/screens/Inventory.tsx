@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTenant } from '../core/tenant'
-import { CAR_STATUS_LABEL, type Car, type CarStatus } from '../core/types'
+import { CAR_STATUS_LABEL, hasPendingReservation, type Car, type CarStatus } from '../core/types'
 import { Button } from '../ui/Button'
 import { EmptyState, SkeletonCard, useToast } from '../ui/Feedback'
 import { Modal } from '../ui/Modal'
@@ -9,15 +9,20 @@ import { CarCard } from './inventory/CarCard'
 import { CarFormModal } from './inventory/CarFormModal'
 import { useCars } from './inventory/useCars'
 
-type Filter = 'todos' | Exclude<CarStatus, 'vendido'>
+type Filter = 'todos' | 'solicitada' | Exclude<CarStatus, 'vendido'>
 
 // Carro vendido sai do painel: fica no banco só para os relatórios de vendas.
-const FILTERS: Filter[] = ['todos', 'ativo', 'reservado']
+// "Reserva solicitada" não é status: é o pedido que o cliente fez no WhatsApp e que
+// ainda não virou sinal -- o carro continua Disponível até o vendedor tocar em Deu sinal.
+const FILTERS: Filter[] = ['todos', 'ativo', 'solicitada', 'reservado']
+
+const FILTER_LABEL = (item: Filter) =>
+  item === 'todos' ? 'Todos' : item === 'solicitada' ? 'Reserva solicitada' : CAR_STATUS_LABEL[item]
 
 export function Inventory() {
   const { store } = useTenant()
   const { toast } = useToast()
-  const { cars: allCars, loading, error, saveCar, deleteCar, markSold, toggleDeposit } = useCars({
+  const { cars: allCars, loading, error, saveCar, deleteCar, markSold, toggleDeposit, cancelReservationRequest } = useCars({
     tenantId: store?.tenant_id ?? undefined,
     storeId: store?.id,
   })
@@ -37,7 +42,8 @@ export function Inventory() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
     return cars.filter((car) => {
-      const matchesStatus = filter === 'todos' || car.status === filter
+      const matchesStatus =
+        filter === 'todos' || (filter === 'solicitada' ? hasPendingReservation(car) : car.status === filter)
       if (!matchesStatus) return false
       if (!term) return true
       return `${car.brand ?? ''} ${car.model} ${car.version ?? ''} ${car.color ?? ''}`.toLowerCase().includes(term)
@@ -48,6 +54,7 @@ export function Inventory() {
     return {
       todos: cars.length,
       ativo: cars.filter((car) => car.status === 'ativo').length,
+      solicitada: cars.filter((car) => hasPendingReservation(car)).length,
       reservado: cars.filter((car) => car.status === 'reservado').length,
     } as Record<Filter, number>
   }, [cars])
@@ -87,6 +94,18 @@ export function Inventory() {
       )
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Não foi possível atualizar o carro.', 'error')
+    } finally {
+      setDepositBusy(null)
+    }
+  }
+
+  async function handleCancelRequest(car: Car) {
+    setDepositBusy(car.id)
+    try {
+      await cancelReservationRequest(car)
+      toast('Pedido de reserva cancelado. O carro segue disponível.')
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'Não foi possível cancelar o pedido.', 'error')
     } finally {
       setDepositBusy(null)
     }
@@ -144,7 +163,7 @@ export function Inventory() {
                   : 'border-ink-200 bg-white text-ink-600 hover:border-brand-300 hover:text-brand-700'
               }`}
             >
-              {item === 'todos' ? 'Todos' : CAR_STATUS_LABEL[item]}
+              {FILTER_LABEL(item)}
               <span className={`ml-2 text-xs ${filter === item ? 'text-white/70' : 'text-ink-400'}`}>{counts[item]}</span>
             </button>
           ))}
@@ -182,7 +201,15 @@ export function Inventory() {
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((car) => (
-              <CarCard key={car.id} car={car} onEdit={openEdit} onSold={setSelling} onDeposit={(c) => void handleDeposit(c)} busy={depositBusy === car.id} />
+              <CarCard
+                key={car.id}
+                car={car}
+                onEdit={openEdit}
+                onSold={setSelling}
+                onDeposit={(c) => void handleDeposit(c)}
+                onCancelRequest={(c) => void handleCancelRequest(c)}
+                busy={depositBusy === car.id}
+              />
             ))}
           </div>
         )}
