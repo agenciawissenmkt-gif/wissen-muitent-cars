@@ -210,6 +210,18 @@ export interface Car {
   status: CarStatus
   created_at: string
   car_photos: CarPhoto[]
+  /** Pedido de reserva feito pelo cliente no WhatsApp (via Julia). Vale até reserva_expira_em. */
+  reserva_solicitada_em?: string | null
+  reserva_expira_em?: string | null
+  reserva_cliente?: string | null
+  reserva_telefone?: string | null
+  reserva_conversa_url?: string | null
+  reserva_obs?: string | null
+}
+
+/** O cliente pediu para segurar o carro pelo WhatsApp e o pedido ainda vale (o carro continua à venda). */
+export function hasPendingReservation(car: Pick<Car, 'status' | 'reserva_expira_em'>, now = Date.now()): boolean {
+  return car.status === 'ativo' && Boolean(car.reserva_expira_em) && new Date(car.reserva_expira_em as string).getTime() > now
 }
 
 export const CAR_STATUS_LABEL: Record<CarStatus, string> = {
