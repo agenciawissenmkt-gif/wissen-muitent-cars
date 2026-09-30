@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import type { Car } from '../../core/types'
+import { hasPendingReservation, type Car } from '../../core/types'
 import { formatBRL, formatKm, formatYear } from '../../core/format'
 import { StatusBadge } from '../../ui/Feedback'
 import { CarIcon, CheckIcon, MoneyIcon, PencilIcon } from '../../ui/icons'
@@ -11,11 +11,22 @@ interface Props {
   onSold: (car: Car) => void
   /** Cliente deu sinal: tira da IA; clicar de novo volta para Disponível. */
   onDeposit: (car: Car) => void
+  /** Cancela o pedido de reserva que o cliente fez pelo WhatsApp (o carro segue disponível). */
+  onCancelRequest?: (car: Car) => void
   busy?: boolean
 }
 
-export function CarCard({ car, onEdit, onSold, onDeposit, busy = false }: Props) {
+function horas(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60000))
+  if (min < 60) return `${min} min`
+  const h = Math.round(min / 60)
+  return `${h} h`
+}
+
+export function CarCard({ car, onEdit, onSold, onDeposit, onCancelRequest, busy = false }: Props) {
   const withDeposit = car.status === 'reservado'
+  const pending = hasPendingReservation(car)
+  const now = Date.now()
   const cover = car.car_photos[0]?.url ?? car.cover_url
 
   const specs = [
@@ -47,8 +58,14 @@ export function CarCard({ car, onEdit, onSold, onDeposit, busy = false }: Props)
           </div>
         )}
 
-        <span className="absolute left-3 top-3">
+        <span className="absolute left-3 top-3 flex flex-wrap gap-1.5">
           <StatusBadge status={car.status} />
+          {pending && (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 ring-1 ring-inset ring-amber-600/30">
+              <span className="size-1.5 rounded-full bg-current" />
+              Reserva solicitada
+            </span>
+          )}
         </span>
 
         {car.car_photos.length > 1 && (
@@ -92,8 +109,41 @@ export function CarCard({ car, onEdit, onSold, onDeposit, busy = false }: Props)
           </button>
         </div>
 
+        {pending && (
+          <div className="mt-3 rounded-xl bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            <p className="font-bold">
+              {car.reserva_cliente || 'Um cliente'} pediu para reservar pelo WhatsApp
+            </p>
+            <p className="mt-0.5 font-medium text-amber-800">
+              {car.reserva_solicitada_em ? `Há ${horas(now - new Date(car.reserva_solicitada_em).getTime())}` : 'Agora há pouco'}
+              {' · '}o pedido expira em {horas(new Date(car.reserva_expira_em as string).getTime() - now)}
+            </p>
+            {car.reserva_obs && <p className="mt-1 line-clamp-2 text-amber-800">{car.reserva_obs}</p>}
+            <p className="mt-1.5 font-medium text-amber-800">
+              O carro continua à venda. Recebeu o sinal? Toque em <strong>Deu sinal</strong>.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-3">
+              {car.reserva_conversa_url && (
+                <a href={car.reserva_conversa_url} target="_blank" rel="noreferrer" className="font-bold text-amber-900 underline">
+                  Abrir conversa
+                </a>
+              )}
+              {onCancelRequest && (
+                <button type="button" disabled={busy} onClick={() => onCancelRequest(car)} className="font-bold text-amber-900 underline disabled:opacity-50">
+                  Cancelar pedido
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {withDeposit && (
           <p className="mt-3 rounded-xl bg-blue-50 px-3 py-2 text-xs font-medium text-blue-900">
+            {car.reserva_cliente && (
+              <>
+                Sinal de <strong>{car.reserva_cliente}</strong>.{' '}
+              </>
+            )}
             Fora da IA enquanto o sinal estiver ativo. Se o cliente desistir, toque em <strong>Retomar venda</strong>.
           </p>
         )}

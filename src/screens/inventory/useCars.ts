@@ -236,5 +236,25 @@ export function useCars({ tenantId, storeId }: Options) {
     [],
   )
 
-  return { cars, loading, error, refresh, saveCar, deleteCar, markSold, toggleDeposit }
+  /** Cancela o pedido de reserva que a Julia registrou (o cliente desistiu ou foi engano). */
+  const cancelReservationRequest = useCallback(
+    async (car: Car) => {
+      const { error: updateError } = await supabase
+        .from('cars')
+        .update({
+          reserva_solicitada_em: null,
+          reserva_expira_em: null,
+          reserva_cliente: null,
+          reserva_telefone: null,
+          reserva_conversa_url: null,
+          reserva_obs: null,
+        })
+        .eq('id', car.id)
+      if (updateError) throw updateError
+      await refresh()
+    },
+    [refresh],
+  )
+
+  return { cars, loading, error, refresh, saveCar, deleteCar, markSold, toggleDeposit, cancelReservationRequest }
 }
