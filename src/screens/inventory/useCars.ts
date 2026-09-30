@@ -227,10 +227,18 @@ export function useCars({ tenantId, storeId }: Options) {
   const toggleDeposit = useCallback(
     async (car: Car) => {
       const next = car.status === 'reservado' ? 'ativo' : 'reservado'
-      const { error: updateError } = await supabase.from('cars').update({ status: next }).eq('id', car.id)
+      const { data: updated, error: updateError } = await supabase
+        .from('cars')
+        .update({ status: next })
+        .eq('id', car.id)
+        .select('*, car_photos(*)')
+        .single()
       if (updateError) throw updateError
-      // Troca só o status daquele carro, no mesmo lugar -- sem recarregar a lista.
-      setCars((current) => current.map((item) => (item.id === car.id ? { ...item, status: next } : item)))
+      // Troca só aquele carro, no mesmo lugar -- sem recarregar a lista. Usa a linha que o
+      // banco devolveu: ao mudar o status, o banco também fecha o pedido de reserva do WhatsApp.
+      setCars((current) =>
+        current.map((item) => (item.id === car.id ? sortPhotos((updated as Car | null) ?? { ...item, status: next }) : item)),
+      )
       return next
     },
     [],
@@ -251,9 +259,24 @@ export function useCars({ tenantId, storeId }: Options) {
         })
         .eq('id', car.id)
       if (updateError) throw updateError
-      await refresh()
+      // Atualiza só aquele carro, no mesmo lugar.
+      setCars((current) =>
+        current.map((item) =>
+          item.id === car.id
+            ? {
+                ...item,
+                reserva_solicitada_em: null,
+                reserva_expira_em: null,
+                reserva_cliente: null,
+                reserva_telefone: null,
+                reserva_conversa_url: null,
+                reserva_obs: null,
+              }
+            : item,
+        ),
+      )
     },
-    [refresh],
+    [],
   )
 
   return { cars, loading, error, refresh, saveCar, deleteCar, markSold, toggleDeposit, cancelReservationRequest }
