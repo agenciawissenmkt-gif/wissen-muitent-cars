@@ -15,6 +15,8 @@ export type InspectionType = 'nenhum' | 'pesquisa' | 'completo'
 
 export type AgentType = 'descoberta' | 'encantamento' | 'fechamento'
 
+export type LaudoResultado = 'aprovado' | 'com_apontamento' | 'reprovado'
+
 export type SalespersonRole = 'administrator' | 'agent'
 
 export interface Store {
@@ -51,6 +53,12 @@ export interface Store {
   offers_test_drive: boolean
   offers_delivery: boolean
   offers_documentation: boolean
+  /** Ficha da loja (01/10): o que a Julia diz em vez de "o consultor confirma". */
+  delivery_details?: string | null
+  documentation_details?: string | null
+  accepts_own_inspection?: boolean
+  discount_policy?: string | null
+  consortium_details?: string | null
   works_with_auction: boolean
   partner_banks: string[]
   payment_methods: string[]
@@ -217,6 +225,13 @@ export interface Car {
   reserva_telefone?: string | null
   reserva_conversa_url?: string | null
   reserva_obs?: string | null
+  /** Laudo cautelar deste carro. A Julia fala dele e envia o PDF pelo WhatsApp. */
+  laudo_resultado?: LaudoResultado | null
+  laudo_empresa?: string | null
+  laudo_data?: string | null
+  laudo_obs?: string | null
+  laudo_pdf_path?: string | null
+  laudo_pdf_url?: string | null
 }
 
 /** O cliente pediu para segurar o carro pelo WhatsApp e o pedido ainda vale (o carro continua à venda). */
@@ -246,6 +261,12 @@ export const INSPECTION_LABEL: Record<InspectionType, string> = {
   nenhum: 'Não trabalhamos com laudo',
   pesquisa: 'Pesquisa veicular',
   completo: 'Laudo cautelar completo',
+}
+
+export const LAUDO_RESULTADO_LABEL: Record<LaudoResultado, string> = {
+  aprovado: 'Aprovado',
+  com_apontamento: 'Aprovado com apontamento',
+  reprovado: 'Reprovado',
 }
 
 /** Ordem das etapas na tela × valor gravado em stores.onboarding_step. */

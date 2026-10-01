@@ -15,3 +15,5 @@ export const supabase = createClient(url || 'https://placeholder.supabase.co', a
 })
 
 export const CAR_PHOTOS_BUCKET = 'car-photos'
+/** PDF do laudo cautelar de cada carro (público, só PDF, até 10 MB). */
+export const CAR_LAUDOS_BUCKET = 'car-laudos'
