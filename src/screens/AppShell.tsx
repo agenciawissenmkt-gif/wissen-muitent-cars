@@ -5,7 +5,7 @@ import { useAuth } from '../core/auth'
 import { useTenant } from '../core/tenant'
 import { Logo } from '../ui/Logo'
 import { Spinner } from '../ui/Button'
-import { CarIcon, ChartIcon, LockIcon, LogoutIcon, MenuIcon, ReportIcon, SettingsIcon } from '../ui/icons'
+import { CarIcon, ChartIcon, KeyIcon, LockIcon, LogoutIcon, MenuIcon, ReportIcon, SettingsIcon } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -13,9 +13,10 @@ interface NavItem {
   icon: ReactNode
 }
 
-/** Ordem fixa do menu: Estoque, Visão Geral, Relatórios e Implementação por último. */
+/** Ordem fixa do menu: Estoque, Carros oferecidos, Visão Geral, Relatórios e Implementação por último. */
 const NAV: NavItem[] = [
   { to: '/estoque', label: 'Estoque de Veículos', icon: <CarIcon /> },
+  { to: '/carros-oferecidos', label: 'Carros oferecidos', icon: <KeyIcon /> },
   { to: '/visao-geral', label: 'Visão Geral', icon: <ChartIcon /> },
   { to: '/relatorios', label: 'Relatórios', icon: <ReportIcon /> },
   { to: '/implementacao', label: 'Implementação', icon: <SettingsIcon /> },
