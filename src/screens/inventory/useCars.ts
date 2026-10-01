@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { CAR_PHOTOS_BUCKET, supabase } from '../../core/supabase'
-import type { Car } from '../../core/types'
+import { CAR_LAUDOS_BUCKET, CAR_PHOTOS_BUCKET, supabase } from '../../core/supabase'
+import type { Car, LaudoResultado } from '../../core/types'
 
 /** Campos editáveis pelo painel — espelham as colunas de `cars`. */
 export interface CarDraft {
@@ -40,7 +40,14 @@ export interface CarDraft {
   accepts_trade: boolean
   description: string | null
   status: Car['status']
+  laudo_resultado: LaudoResultado | null
+  laudo_empresa: string | null
+  laudo_data: string | null
+  laudo_obs: string | null
 }
+
+/** O que fazer com o PDF do laudo ao salvar: manter o atual, subir um novo ou tirar. */
+export type LaudoPdf = { kind: 'keep' } | { kind: 'new'; file: File } | { kind: 'remove' }
 
 /** Foto já salva no banco ou arquivo novo ainda não enviado. */
 export type PhotoItem =
@@ -94,7 +101,7 @@ export function useCars({ tenantId, storeId }: Options) {
 
   /** Cria ou atualiza o veículo e sincroniza as fotos (upload, ordem e remoções). */
   const saveCar = useCallback(
-    async (draft: CarDraft, photos: PhotoItem[], carId?: string) => {
+    async (draft: CarDraft, photos: PhotoItem[], carId?: string, laudoPdf: LaudoPdf = { kind: 'keep' }) => {
       if (!tenantId) throw new Error('Loja não identificada.')
 
       const { data: saved, error: saveError } = carId
@@ -184,6 +191,35 @@ export function useCars({ tenantId, storeId }: Options) {
       // cover_url é o que o agente usa como foto principal no WhatsApp
       await supabase.from('cars').update({ cover_url: coverUrl }).eq('id', id)
 
+      // PDF do laudo: a Julia envia este arquivo quando o cliente pede o laudo.
+      if (laudoPdf.kind !== 'keep') {
+        const { data: atual } = await supabase.from('cars').select('laudo_pdf_path').eq('id', id).single()
+        const antigo = (atual as { laudo_pdf_path: string | null } | null)?.laudo_pdf_path ?? null
+
+        if (laudoPdf.kind === 'new') {
+          const path = `${tenantId}/${id}/laudo-${crypto.randomUUID()}.pdf`
+          const { error: uploadError } = await supabase.storage
+            .from(CAR_LAUDOS_BUCKET)
+            .upload(path, laudoPdf.file, { contentType: 'application/pdf', upsert: false })
+          if (uploadError) throw new Error(`Falha ao enviar o PDF do laudo: ${uploadError.message}`)
+
+          const { data: publicUrl } = supabase.storage.from(CAR_LAUDOS_BUCKET).getPublicUrl(path)
+          const { error: laudoError } = await supabase
+            .from('cars')
+            .update({ laudo_pdf_path: path, laudo_pdf_url: publicUrl.publicUrl })
+            .eq('id', id)
+          if (laudoError) throw laudoError
+        } else {
+          const { error: laudoError } = await supabase
+            .from('cars')
+            .update({ laudo_pdf_path: null, laudo_pdf_url: null })
+            .eq('id', id)
+          if (laudoError) throw laudoError
+        }
+
+        if (antigo) await supabase.storage.from(CAR_LAUDOS_BUCKET).remove([antigo])
+      }
+
       await refresh()
       return id
     },
@@ -201,6 +237,7 @@ export function useCars({ tenantId, storeId }: Options) {
       if (deleteError) throw deleteError
 
       if (paths.length) await supabase.storage.from(CAR_PHOTOS_BUCKET).remove(paths)
+      if (car.laudo_pdf_path) await supabase.storage.from(CAR_LAUDOS_BUCKET).remove([car.laudo_pdf_path])
       await refresh()
     },
     [refresh],

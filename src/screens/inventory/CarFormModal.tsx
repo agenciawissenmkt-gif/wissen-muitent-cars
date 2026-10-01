@@ -6,6 +6,7 @@ import {
   BODY_TYPES,
   CAR_STATUS_LABEL,
   CARPLAY_OPTIONS,
+  LAUDO_RESULTADO_LABEL,
   FUELS,
   PARKING_SENSORS,
   SUNROOFS,
@@ -14,16 +15,17 @@ import {
   YES_NO,
   type Car,
   type CarStatus,
+  type LaudoResultado,
 } from '../../core/types'
 import { PhotoPicker } from './PhotoPicker'
-import type { CarDraft, PhotoItem } from './useCars'
+import type { CarDraft, LaudoPdf, PhotoItem } from './useCars'
 import { BotaoFichaIA } from './BotaoFichaIA'
 
 interface Props {
   open: boolean
   car: Car | null
   onClose: () => void
-  onSave: (draft: CarDraft, photos: PhotoItem[], carId?: string) => Promise<unknown>
+  onSave: (draft: CarDraft, photos: PhotoItem[], carId?: string, laudoPdf?: LaudoPdf) => Promise<unknown>
   /** Excluir de vez (cadastro errado). Venda usa o botão Vendido do cartão. */
   onDelete?: (car: Car) => void
 }
@@ -37,7 +39,7 @@ const TEXT_FIELDS = [
   'fuel', 'mileage_km', 'price_brl', 'engine', 'cylinders', 'horsepower', 'torque',
   'acceleration_0_100', 'aspiration', 'traction', 'air_conditioning', 'steering', 'electric_windows',
   'sunroof', 'carplay_android_auto', 'trunk_liters', 'leather_seats', 'keyless_entry', 'parking_sensor',
-  'rear_camera', 'description',
+  'rear_camera', 'description', 'laudo_resultado', 'laudo_empresa', 'laudo_data', 'laudo_obs',
 ] as const
 
 const BOOL_FIELDS = ['ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade'] as const
@@ -51,6 +53,9 @@ const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
   { key: 'licensed', label: 'Licenciado' },
 ]
 
+const LAUDO_RESULTADOS = Object.keys(LAUDO_RESULTADO_LABEL) as LaudoResultado[]
+const LAUDO_MAX_BYTES = 10 * 1024 * 1024
+
 const num = (value: string) => (value.trim() === '' ? null : Number(value.replace(/\./g, '').replace(',', '.')))
 const text = (value: string) => (value.trim() === '' ? null : value.trim())
 
@@ -58,12 +63,14 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const [form, setForm] = useState<FormState>({ ...EMPTY_TEXT, status: 'ativo' } as FormState)
   const [flags, setFlags] = useState<Record<string, boolean>>({ accepts_trade: true })
   const [photos, setPhotos] = useState<PhotoItem[]>([])
+  const [laudoPdf, setLaudoPdf] = useState<LaudoPdf>({ kind: 'keep' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
     setError(null)
+    setLaudoPdf({ kind: 'keep' })
 
     if (car) {
       const next: Record<string, string> = {}
@@ -91,6 +98,28 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   }, [open, car])
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }))
+
+  /** PDF que vale agora: o novo escolhido, o que já estava salvo ou nenhum. */
+  const pdfAtual =
+    laudoPdf.kind === 'new'
+      ? { nome: laudoPdf.file.name, url: null as string | null }
+      : laudoPdf.kind === 'keep' && car?.laudo_pdf_url
+        ? { nome: 'PDF do laudo', url: car.laudo_pdf_url }
+        : null
+
+  function escolheLaudo(file: File | undefined) {
+    if (!file) return
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      setError('O laudo precisa ser um arquivo PDF.')
+      return
+    }
+    if (file.size > LAUDO_MAX_BYTES) {
+      setError('O PDF do laudo passa de 10 MB. Gere um arquivo menor e tente de novo.')
+      return
+    }
+    setError(null)
+    setLaudoPdf({ kind: 'new', file })
+  }
   const flag = (key: string) => Boolean(flags[key])
   const setFlag = (key: string, value: boolean) => setFlags((prev) => ({ ...prev, [key]: value }))
 
@@ -141,10 +170,16 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       accepts_trade: flag('accepts_trade'),
       description: text(form.description),
       status: form.status,
+      laudo_resultado: (LAUDO_RESULTADOS as string[]).includes(form.laudo_resultado)
+        ? (form.laudo_resultado as LaudoResultado)
+        : null,
+      laudo_empresa: text(form.laudo_empresa),
+      laudo_data: text(form.laudo_data),
+      laudo_obs: text(form.laudo_obs),
     }
 
     try {
-      await onSave(draft, photos, car?.id)
+      await onSave(draft, photos, car?.id, laudoPdf)
       onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Não foi possível salvar o veículo.')
@@ -276,6 +311,85 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                 {item.label}
               </CheckPill>
             ))}
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-1 text-sm font-bold text-ink-900">Laudo cautelar deste carro</h3>
+          <p className="mb-3 text-xs text-ink-500">
+            A Júlia fala do laudo deste carro e envia o PDF quando o cliente pedir. Sem laudo aqui, ela usa a regra
+            geral da loja.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              label="Resultado"
+              options={LAUDO_RESULTADOS.map((resultado) => LAUDO_RESULTADO_LABEL[resultado])}
+              placeholder="Sem laudo cadastrado"
+              value={
+                (LAUDO_RESULTADOS as string[]).includes(form.laudo_resultado)
+                  ? LAUDO_RESULTADO_LABEL[form.laudo_resultado as LaudoResultado]
+                  : ''
+              }
+              onChange={(e) =>
+                set('laudo_resultado', LAUDO_RESULTADOS.find((r) => LAUDO_RESULTADO_LABEL[r] === e.target.value) ?? '')
+              }
+            />
+            <Input
+              label="Empresa do laudo"
+              value={form.laudo_empresa}
+              onChange={(e) => set('laudo_empresa', e.target.value)}
+              placeholder="Dekra, Supervisão, Tüv..."
+            />
+            <Input label="Data do laudo" type="date" value={form.laudo_data} onChange={(e) => set('laudo_data', e.target.value)} />
+            <Field label="PDF do laudo">
+              <div className="flex flex-wrap items-center gap-2">
+                {pdfAtual ? (
+                  pdfAtual.url ? (
+                    <a
+                      href={pdfAtual.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-semibold text-brand-700 hover:underline"
+                    >
+                      {pdfAtual.nome}
+                    </a>
+                  ) : (
+                    <span className="max-w-[14rem] truncate text-sm font-semibold text-ink-900">{pdfAtual.nome}</span>
+                  )
+                ) : (
+                  <span className="text-sm text-ink-400">Nenhum PDF</span>
+                )}
+                <label className="cursor-pointer rounded-xl border border-ink-200 bg-white px-3 py-2 text-xs font-semibold text-ink-700 hover:border-brand-300">
+                  {pdfAtual ? 'Trocar' : 'Enviar PDF'}
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    className="hidden"
+                    onChange={(e) => {
+                      escolheLaudo(e.target.files?.[0])
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+                {pdfAtual && (
+                  <button
+                    type="button"
+                    onClick={() => setLaudoPdf(car?.laudo_pdf_url ? { kind: 'remove' } : { kind: 'keep' })}
+                    className="text-xs font-semibold text-red-600 hover:underline"
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
+            </Field>
+            <Textarea
+              label="Apontamentos"
+              className="sm:col-span-2"
+              value={form.laudo_obs}
+              onChange={(e) => set('laudo_obs', e.target.value)}
+              placeholder="Ex.: reparo no para-choque traseiro, sem dano estrutural."
+              hint="O que o laudo apontou. A Júlia fala disso com honestidade e passa os detalhes ao consultor."
+            />
           </div>
         </section>
 
