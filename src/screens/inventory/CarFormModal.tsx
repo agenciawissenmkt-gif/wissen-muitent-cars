@@ -382,14 +382,15 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                 )}
               </div>
             </Field>
-            <Textarea
-              label="Apontamentos"
-              className="sm:col-span-2"
-              value={form.laudo_obs}
-              onChange={(e) => set('laudo_obs', e.target.value)}
-              placeholder="Ex.: reparo no para-choque traseiro, sem dano estrutural."
-              hint="O que o laudo apontou. A Júlia fala disso com honestidade e passa os detalhes ao consultor."
-            />
+            <div className="sm:col-span-2">
+              <Textarea
+                label="Apontamentos"
+                value={form.laudo_obs}
+                onChange={(e) => set('laudo_obs', e.target.value)}
+                placeholder="Ex.: reparo no para-choque traseiro, sem dano estrutural."
+                hint="O que o laudo apontou. A Júlia fala disso com honestidade e passa os detalhes ao consultor."
+              />
+            </div>
           </div>
         </section>
 
