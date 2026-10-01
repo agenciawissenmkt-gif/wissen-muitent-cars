@@ -11,6 +11,7 @@ import { Inventory } from './screens/Inventory'
 import { Overview } from './screens/Overview'
 import { Implementation } from './screens/Implementation'
 import { Reports } from './screens/Reports'
+import { Offers } from './screens/Offers'
 
 function SetupNotice() {
   return (
@@ -51,6 +52,7 @@ function Gate() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/estoque" element={<Inventory />} />
+          <Route path="/carros-oferecidos" element={<Offers />} />
           <Route path="/visao-geral" element={<Overview />} />
           <Route path="/relatorios" element={<Reports />} />
           <Route path="/implementacao" element={<Implementation />} />
