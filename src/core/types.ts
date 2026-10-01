@@ -59,6 +59,11 @@ export interface Store {
   accepts_own_inspection?: boolean
   discount_policy?: string | null
   consortium_details?: string | null
+  /** Compra e consignação do carro do cliente (agente de Captação). */
+  buys_cars?: boolean
+  purchase_details?: string | null
+  consignment_terms?: string | null
+  intake_rules?: string | null
   works_with_auction: boolean
   partner_banks: string[]
   payment_methods: string[]
@@ -261,6 +266,53 @@ export const INSPECTION_LABEL: Record<InspectionType, string> = {
   nenhum: 'Não trabalhamos com laudo',
   pesquisa: 'Pesquisa veicular',
   completo: 'Laudo cautelar completo',
+}
+
+export type CarOfferTipo = 'venda' | 'consignacao' | 'indefinido'
+export type CarOfferStatus = 'novo' | 'em_avaliacao' | 'comprado' | 'consignado' | 'recusado' | 'desistiu'
+
+/** Carro que um cliente quer vender para a loja ou deixar em consignação (registrado pela Júlia). */
+export interface CarOffer {
+  id: string
+  tenant_id: string
+  tipo: CarOfferTipo
+  status: CarOfferStatus
+  cliente_nome: string | null
+  cliente_telefone: string | null
+  conversa_url: string | null
+  marca: string | null
+  modelo: string | null
+  versao: string | null
+  ano: number | null
+  km: number | null
+  cor: string | null
+  estado: string | null
+  quitado: boolean | null
+  financiamento_detalhes: string | null
+  historico: string | null
+  documentacao: string | null
+  preco_pedido: number | string | null
+  cidade: string | null
+  urgencia: string | null
+  observacoes: string | null
+  fotos: string[]
+  created_at: string
+  updated_at: string
+}
+
+export const CAR_OFFER_TIPO_LABEL: Record<CarOfferTipo, string> = {
+  venda: 'Venda para a loja',
+  consignacao: 'Consignação',
+  indefinido: 'A definir',
+}
+
+export const CAR_OFFER_STATUS_LABEL: Record<CarOfferStatus, string> = {
+  novo: 'Novo',
+  em_avaliacao: 'Em avaliação',
+  comprado: 'Comprado',
+  consignado: 'Consignado',
+  recusado: 'Recusado',
+  desistiu: 'Cliente desistiu',
 }
 
 export const LAUDO_RESULTADO_LABEL: Record<LaudoResultado, string> = {
