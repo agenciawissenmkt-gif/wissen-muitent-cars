@@ -49,6 +49,11 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   )
 }
 
+/** "Consórcio" e "Consorcio" são a mesma forma de pagamento (há lojas gravadas sem acento). */
+function semAcento(text: string) {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim()
+}
+
 /** Alterna um item dentro de uma lista de seleção múltipla. */
 function toggleIn(list: string[], value: string, checked: boolean) {
   return checked ? [...new Set([...list, value])] : list.filter((item) => item !== value)
@@ -100,6 +105,13 @@ export function StepRules({ onNext }: { onNext: () => void }) {
   const [warrantyMonths, setWarrantyMonths] = useState('')
   const [warrantyDetails, setWarrantyDetails] = useState('')
 
+  // --- Ficha da loja: o que a Júlia responde em vez de "o consultor confirma"
+  const [deliveryDetails, setDeliveryDetails] = useState('')
+  const [documentationDetails, setDocumentationDetails] = useState('')
+  const [ownInspection, setOwnInspection] = useState(false)
+  const [discountPolicy, setDiscountPolicy] = useState('')
+  const [consortiumDetails, setConsortiumDetails] = useState('')
+
   // --- Listas
   const [banks, setBanks] = useState<string[]>([])
   const [payments, setPayments] = useState<string[]>([])
@@ -143,6 +155,11 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     setInspection(store.has_inspection ? store.inspection_type : 'nenhum')
     setWarrantyMonths(store.warranty_months ? String(store.warranty_months) : '')
     setWarrantyDetails(store.warranty_details ?? '')
+    setDeliveryDetails(store.delivery_details ?? '')
+    setDocumentationDetails(store.documentation_details ?? '')
+    setOwnInspection(Boolean(store.accepts_own_inspection))
+    setDiscountPolicy(store.discount_policy ?? '')
+    setConsortiumDetails(store.consortium_details ?? '')
 
     setBanks(store.partner_banks ?? [])
     setPayments(store.payment_methods ?? [])
@@ -249,6 +266,12 @@ export function StepRules({ onNext }: { onNext: () => void }) {
         inspection_type: inspection,
         warranty_months: Number(warrantyMonths) || 0,
         warranty_details: warrantyDetails.trim() || null,
+        // Detalhe de algo desligado não vai para a IA: ela não pode explicar o que a loja não faz.
+        delivery_details: (delivery && deliveryDetails.trim()) || null,
+        documentation_details: (documentation && documentationDetails.trim()) || null,
+        accepts_own_inspection: ownInspection,
+        discount_policy: discountPolicy.trim() || null,
+        consortium_details: consortiumDetails.trim() || null,
 
         partner_banks: banks,
         payment_methods: payments,
@@ -601,7 +624,38 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 label="Cuida da documentação"
                 description="A transferência fica por conta da loja."
               />
+              <Toggle
+                checked={ownInspection}
+                onChange={setOwnInspection}
+                label="Aceita vistoria de confiança"
+                description="O cliente pode levar o carro a um mecânico ou laudo de confiança antes de fechar."
+              />
             </div>
+
+            {(delivery || documentation) && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {delivery && (
+                  <Input
+                    label="Como funciona a entrega"
+                    className={documentation ? '' : 'sm:col-span-2'}
+                    value={deliveryDetails}
+                    onChange={(e) => setDeliveryDetails(e.target.value)}
+                    placeholder="Grátis em Curitiba e região; outras cidades do PR com frete. Prazo de 2 a 5 dias úteis."
+                    hint="Cidades atendidas, custo e prazo. Vazio: a IA diz que o consultor confirma."
+                  />
+                )}
+                {documentation && (
+                  <Input
+                    label="Como funciona a documentação"
+                    className={delivery ? '' : 'sm:col-span-2'}
+                    value={documentationDetails}
+                    onChange={(e) => setDocumentationDetails(e.target.value)}
+                    placeholder="Transferência inclusa no preço; a loja faz tudo no Detran."
+                    hint="Quem paga a transferência e o que está incluso."
+                  />
+                )}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Select
@@ -629,6 +683,14 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 value={warrantyDetails}
                 onChange={(e) => setWarrantyDetails(e.target.value)}
                 placeholder="Motor e câmbio, sem limite de quilometragem"
+              />
+              <Input
+                label="Política de desconto"
+                className="sm:col-span-2"
+                value={discountPolicy}
+                onChange={(e) => setDiscountPolicy(e.target.value)}
+                placeholder="O preço anunciado já é o final; condição especial só à vista, aprovada pelo gerente."
+                hint="A IA explica a regra, mas nunca fecha um valor de desconto: quem fecha é o consultor."
               />
             </div>
           </Section>
@@ -663,6 +725,15 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 ))}
               </div>
             </Field>
+            {payments.some((method) => semAcento(method) === 'consorcio') && (
+              <Input
+                label="Como a loja trabalha com consórcio"
+                value={consortiumDetails}
+                onChange={(e) => setConsortiumDetails(e.target.value)}
+                placeholder="Carta contemplada de qualquer administradora; a diferença pode ser à vista ou com troca."
+                hint="Administradoras aceitas, como cobrir a diferença, prazo para liberar a carta."
+              />
+            )}
           </Section>
 
           <Section
