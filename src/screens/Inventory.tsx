@@ -220,8 +220,8 @@ export function Inventory() {
         car={editing}
         onClose={() => setFormOpen(false)}
         onDelete={(car) => setDeleting(car)}
-        onSave={async (draft, photos, carId) => {
-          const id = await saveCar(draft, photos, carId)
+        onSave={async (draft, photos, carId, laudoPdf) => {
+          const id = await saveCar(draft, photos, carId, laudoPdf)
           toast(carId ? 'Anúncio atualizado com sucesso.' : 'Veículo cadastrado no estoque.')
           return id
         }}
