@@ -112,6 +112,12 @@ export function StepRules({ onNext }: { onNext: () => void }) {
   const [discountPolicy, setDiscountPolicy] = useState('')
   const [consortiumDetails, setConsortiumDetails] = useState('')
 
+  // --- Compra e consignação do carro do cliente (agente de Captação)
+  const [buysCars, setBuysCars] = useState(false)
+  const [purchaseDetails, setPurchaseDetails] = useState('')
+  const [consignmentTerms, setConsignmentTerms] = useState('')
+  const [intakeRules, setIntakeRules] = useState('')
+
   // --- Listas
   const [banks, setBanks] = useState<string[]>([])
   const [payments, setPayments] = useState<string[]>([])
@@ -160,6 +166,10 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     setOwnInspection(Boolean(store.accepts_own_inspection))
     setDiscountPolicy(store.discount_policy ?? '')
     setConsortiumDetails(store.consortium_details ?? '')
+    setBuysCars(Boolean(store.buys_cars))
+    setPurchaseDetails(store.purchase_details ?? '')
+    setConsignmentTerms(store.consignment_terms ?? '')
+    setIntakeRules(store.intake_rules ?? '')
 
     setBanks(store.partner_banks ?? [])
     setPayments(store.payment_methods ?? [])
@@ -272,6 +282,10 @@ export function StepRules({ onNext }: { onNext: () => void }) {
         accepts_own_inspection: ownInspection,
         discount_policy: discountPolicy.trim() || null,
         consortium_details: consortiumDetails.trim() || null,
+        buys_cars: buysCars,
+        purchase_details: (buysCars && purchaseDetails.trim()) || null,
+        consignment_terms: (consignment && consignmentTerms.trim()) || null,
+        intake_rules: ((buysCars || consignment) && intakeRules.trim()) || null,
 
         partner_banks: banks,
         payment_methods: payments,
@@ -595,12 +609,6 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 description="A IA pode falar de entrada, parcelas e simulação."
               />
               <Toggle
-                checked={consignment}
-                onChange={setConsignment}
-                label="Aceita consignação"
-                description="A loja vende veículos de terceiros deixados em consignação."
-              />
-              <Toggle
                 checked={auction}
                 onChange={setAuction}
                 label="Trabalha com leilão"
@@ -693,6 +701,53 @@ export function StepRules({ onNext }: { onNext: () => void }) {
                 hint="A IA explica a regra, mas nunca fecha um valor de desconto: quem fecha é o consultor."
               />
             </div>
+          </Section>
+
+          <Section
+            title="Compra e consignação de carro de cliente"
+            hint="Quando o cliente quer vender o carro dele ou deixar na loja para vender, a Júlia tira as dúvidas com estas regras, levanta os dados e as fotos do carro e passa para o consultor. Ela nunca dá valor nem fecha negócio — os carros oferecidos aparecem em “Carros oferecidos”."
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Toggle
+                checked={buysCars}
+                onChange={setBuysCars}
+                label="Compra carro de cliente"
+                description="A loja compra o carro do cliente (fora da troca)."
+              />
+              <Toggle
+                checked={consignment}
+                onChange={setConsignment}
+                label="Aceita consignação"
+                description="O cliente deixa o carro na loja e recebe quando vender."
+              />
+            </div>
+            {buysCars && (
+              <Textarea
+                label="Como a loja compra"
+                value={purchaseDetails}
+                onChange={(e) => setPurchaseDetails(e.target.value)}
+                placeholder="Avaliação presencial, gratuita e sem compromisso. Pagamento à vista por transferência em até 2 dias úteis. Quitamos o financiamento direto com o banco e pagamos a diferença."
+                hint="Como é a avaliação, como e quando o cliente recebe, se a loja quita financiamento."
+              />
+            )}
+            {consignment && (
+              <Textarea
+                label="Condições da consignação"
+                value={consignmentTerms}
+                onChange={(e) => setConsignmentTerms(e.target.value)}
+                placeholder="Comissão de 8% sobre a venda (mínimo R$ 1.500). Contrato mínimo de 60 dias. O carro fica no nosso pátio, com seguro. Fazemos fotos, anúncio e higienização. O dono recebe em até 3 dias úteis após a venda."
+                hint="Comissão, prazo do contrato, onde o carro fica, quem faz fotos e anúncio, seguro e quando o dono recebe."
+              />
+            )}
+            {(buysCars || consignment) && (
+              <Textarea
+                label="Regras para receber o carro"
+                value={intakeRules}
+                onChange={(e) => setIntakeRules(e.target.value)}
+                placeholder="A partir de 2012 e até 150 mil km. Não recebemos carro de leilão nem com sinistro de média ou grande monta. Documento em nome do proprietário."
+                hint="Ano mínimo, km máximo, o que a loja não aceita e documentos. A Júlia só recusa pelo que estiver escrito aqui."
+              />
+            )}
           </Section>
 
           <Section
