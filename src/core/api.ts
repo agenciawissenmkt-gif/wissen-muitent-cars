@@ -167,3 +167,19 @@ export function gerarFichaTecnica(input: {
     body: JSON.stringify(input),
   })
 }
+
+/** Leitura do PDF do laudo: o que a IA achou escrito no documento. */
+export type LeituraLaudo = {
+  tipo_documento: 'laudo_cautelar' | 'vistoria' | 'consulta_veicular' | 'outro'
+  empresa: string | null
+  data: string | null
+  resultado: 'aprovado' | 'com_apontamento' | 'reprovado' | null
+  apontamentos: string | null
+}
+
+export function lerLaudo(input: { tenant_id: string; pdf_url: string }) {
+  return request<{ leitura: LeituraLaudo; modelo_usado: string }>('/laudo/ler', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
