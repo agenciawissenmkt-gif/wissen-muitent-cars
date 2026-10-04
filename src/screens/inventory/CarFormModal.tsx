@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Modal } from '../../ui/Modal'
 import { Button } from '../../ui/Button'
 import { CheckPill, Field, Input, Select, Textarea, Toggle } from '../../ui/Field'
@@ -18,7 +18,9 @@ import {
   type LaudoResultado,
 } from '../../core/types'
 import { PhotoPicker } from './PhotoPicker'
-import type { CarDraft, LaudoPdf, PhotoItem } from './useCars'
+import { subirLaudoPdf, type CarDraft, type LaudoPdf, type PhotoItem } from './useCars'
+import { lerLaudo } from '../../core/api'
+import { useTenant } from '../../core/tenant'
 import { BotaoFichaIA } from './BotaoFichaIA'
 
 interface Props {
@@ -64,6 +66,13 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const [flags, setFlags] = useState<Record<string, boolean>>({ accepts_trade: true })
   const [photos, setPhotos] = useState<PhotoItem[]>([])
   const [laudoPdf, setLaudoPdf] = useState<LaudoPdf>({ kind: 'keep' })
+  // Leitura do PDF do laudo pela IA (preenche empresa, data, resultado e apontamentos).
+  const [lendoLaudo, setLendoLaudo] = useState(false)
+  const [avisoLaudo, setAvisoLaudo] = useState<{ tom: 'ok' | 'erro'; texto: string } | null>(null)
+  const leituraAtual = useRef(0)
+  const formRef = useRef<Record<string, string>>({})
+  const { store } = useTenant()
+  const tenantId = store?.tenant_id ?? null
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -71,6 +80,9 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     if (!open) return
     setError(null)
     setLaudoPdf({ kind: 'keep' })
+    setAvisoLaudo(null)
+    setLendoLaudo(false)
+    leituraAtual.current++
 
     if (car) {
       const next: Record<string, string> = {}
@@ -98,6 +110,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   }, [open, car])
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }))
+  formRef.current = form
 
   /** PDF que vale agora: o novo escolhido, o que já estava salvo ou nenhum. */
   const pdfAtual =
@@ -119,6 +132,69 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     }
     setError(null)
     setLaudoPdf({ kind: 'new', file })
+    void lerPdfDoLaudo(file)
+  }
+
+  /**
+   * Sobe o PDF na hora e pede para a IA ler. So preenche o campo que ainda esta
+   * vazio -- o que a loja ja digitou fica como esta. Resultado so vem quando o
+   * documento traz o parecer; consulta veicular sem parecer fica para a loja escolher.
+   */
+  async function lerPdfDoLaudo(file: File) {
+    if (!tenantId) return
+    const minha = ++leituraAtual.current
+    setLendoLaudo(true)
+    setAvisoLaudo(null)
+    try {
+      const enviado = await subirLaudoPdf(tenantId, file)
+      if (leituraAtual.current !== minha) return
+      setLaudoPdf({ kind: 'new', file, enviado })
+
+      const { leitura } = await lerLaudo({ tenant_id: tenantId, pdf_url: enviado.url })
+      if (leituraAtual.current !== minha) return
+
+      const atual = formRef.current
+      const novos: Record<string, string> = {}
+      const preenchidos: string[] = []
+      const mantidos: string[] = []
+      const tenta = (campo: string, valor: string | null, nome: string) => {
+        if (!valor) return
+        if ((atual[campo] ?? '').trim()) {
+          if ((atual[campo] ?? '').trim() !== valor) mantidos.push(nome)
+          return
+        }
+        novos[campo] = valor
+        preenchidos.push(nome)
+      }
+      tenta('laudo_resultado', leitura.resultado, 'resultado')
+      tenta('laudo_empresa', leitura.empresa, 'empresa')
+      tenta('laudo_data', leitura.data, 'data')
+      tenta('laudo_obs', leitura.apontamentos, 'apontamentos')
+      if (Object.keys(novos).length) setForm((prev) => ({ ...prev, ...novos }))
+
+      const partes: string[] = []
+      if (preenchidos.length) partes.push(`Preenchi pelo PDF: ${preenchidos.join(', ')}.`)
+      if (!leitura.resultado && !(atual.laudo_resultado ?? '').trim()) {
+        partes.push(
+          leitura.tipo_documento === 'consulta_veicular'
+            ? 'É uma consulta veicular, sem parecer final: escolha o resultado você.'
+            : 'O PDF não traz o resultado: escolha você.',
+        )
+      }
+      if (mantidos.length) partes.push(`Mantive o que você já tinha preenchido em: ${mantidos.join(', ')}.`)
+      if (!preenchidos.length && !partes.length) partes.push('Não achei empresa, data nem resultado escritos no PDF. Preencha à mão.')
+      partes.push('Confira antes de salvar.')
+      setAvisoLaudo({ tom: 'ok', texto: partes.join(' ') })
+    } catch (e) {
+      if (leituraAtual.current !== minha) return
+      const motivo = e instanceof Error ? e.message : ''
+      setAvisoLaudo({
+        tom: 'erro',
+        texto: `${motivo || 'Não consegui ler o PDF agora.'} O PDF continua anexado; preencha os campos à mão se precisar.`,
+      })
+    } finally {
+      if (leituraAtual.current === minha) setLendoLaudo(false)
+    }
   }
   const flag = (key: string) => Boolean(flags[key])
   const setFlag = (key: string, value: boolean) => setFlags((prev) => ({ ...prev, [key]: value }))
@@ -318,7 +394,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
           <h3 className="mb-1 text-sm font-bold text-ink-900">Laudo cautelar deste carro</h3>
           <p className="mb-3 text-xs text-ink-500">
             A Júlia fala do laudo deste carro e envia o PDF quando o cliente pedir. Sem laudo aqui, ela usa a regra
-            geral da loja.
+            geral da loja. Ao enviar o PDF, a IA lê o documento e preenche os campos vazios para você conferir.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Select
@@ -374,7 +450,12 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                 {pdfAtual && (
                   <button
                     type="button"
-                    onClick={() => setLaudoPdf(car?.laudo_pdf_url ? { kind: 'remove' } : { kind: 'keep' })}
+                    onClick={() => {
+                      leituraAtual.current++
+                      setLendoLaudo(false)
+                      setAvisoLaudo(null)
+                      setLaudoPdf(car?.laudo_pdf_url ? { kind: 'remove' } : { kind: 'keep' })
+                    }}
                     className="text-xs font-semibold text-red-600 hover:underline"
                   >
                     Remover
@@ -382,6 +463,19 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                 )}
               </div>
             </Field>
+            {(lendoLaudo || avisoLaudo) && (
+              <p
+                className={`sm:col-span-2 rounded-2xl px-4 py-3 text-xs ${
+                  lendoLaudo
+                    ? 'bg-brand-50 text-brand-700'
+                    : avisoLaudo?.tom === 'erro'
+                      ? 'bg-red-50 text-red-700'
+                      : 'bg-emerald-50 text-emerald-800'
+                }`}
+              >
+                {lendoLaudo ? 'Lendo o PDF do laudo para preencher os campos...' : avisoLaudo?.texto}
+              </p>
+            )}
             <div className="sm:col-span-2">
               <Textarea
                 label="Apontamentos"

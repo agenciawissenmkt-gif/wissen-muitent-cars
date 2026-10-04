@@ -47,7 +47,28 @@ export interface CarDraft {
 }
 
 /** O que fazer com o PDF do laudo ao salvar: manter o atual, subir um novo ou tirar. */
-export type LaudoPdf = { kind: 'keep' } | { kind: 'new'; file: File } | { kind: 'remove' }
+export type LaudoPdf =
+  | { kind: 'keep' }
+  | { kind: 'new'; file: File; enviado?: LaudoEnviado }
+  | { kind: 'remove' }
+
+/** PDF que ja subiu para o storage assim que foi escolhido (para a IA ler o laudo). */
+export type LaudoEnviado = { path: string; url: string }
+
+/**
+ * Sobe o PDF do laudo na hora em que a loja escolhe o arquivo, para a IA ler e
+ * preencher empresa, data e resultado antes de salvar. Ao salvar, o cadastro usa
+ * este mesmo arquivo (nao sobe de novo).
+ */
+export async function subirLaudoPdf(tenantId: string, file: File): Promise<LaudoEnviado> {
+  const path = `${tenantId}/rascunho/laudo-${crypto.randomUUID()}.pdf`
+  const { error } = await supabase.storage
+    .from(CAR_LAUDOS_BUCKET)
+    .upload(path, file, { contentType: 'application/pdf', upsert: false })
+  if (error) throw new Error(`Falha ao enviar o PDF do laudo: ${error.message}`)
+  const { data } = supabase.storage.from(CAR_LAUDOS_BUCKET).getPublicUrl(path)
+  return { path, url: data.publicUrl }
+}
 
 /** Foto já salva no banco ou arquivo novo ainda não enviado. */
 export type PhotoItem =
@@ -197,16 +218,21 @@ export function useCars({ tenantId, storeId }: Options) {
         const antigo = (atual as { laudo_pdf_path: string | null } | null)?.laudo_pdf_path ?? null
 
         if (laudoPdf.kind === 'new') {
-          const path = `${tenantId}/${id}/laudo-${crypto.randomUUID()}.pdf`
-          const { error: uploadError } = await supabase.storage
-            .from(CAR_LAUDOS_BUCKET)
-            .upload(path, laudoPdf.file, { contentType: 'application/pdf', upsert: false })
-          if (uploadError) throw new Error(`Falha ao enviar o PDF do laudo: ${uploadError.message}`)
+          // Ja subiu quando foi escolhido (para a IA ler)? Usa o mesmo arquivo.
+          let enviado = laudoPdf.enviado ?? null
+          if (!enviado) {
+            const path = `${tenantId}/${id}/laudo-${crypto.randomUUID()}.pdf`
+            const { error: uploadError } = await supabase.storage
+              .from(CAR_LAUDOS_BUCKET)
+              .upload(path, laudoPdf.file, { contentType: 'application/pdf', upsert: false })
+            if (uploadError) throw new Error(`Falha ao enviar o PDF do laudo: ${uploadError.message}`)
+            const { data: publicUrl } = supabase.storage.from(CAR_LAUDOS_BUCKET).getPublicUrl(path)
+            enviado = { path, url: publicUrl.publicUrl }
+          }
 
-          const { data: publicUrl } = supabase.storage.from(CAR_LAUDOS_BUCKET).getPublicUrl(path)
           const { error: laudoError } = await supabase
             .from('cars')
-            .update({ laudo_pdf_path: path, laudo_pdf_url: publicUrl.publicUrl })
+            .update({ laudo_pdf_path: enviado.path, laudo_pdf_url: enviado.url })
             .eq('id', id)
           if (laudoError) throw laudoError
         } else {
@@ -217,7 +243,8 @@ export function useCars({ tenantId, storeId }: Options) {
           if (laudoError) throw laudoError
         }
 
-        if (antigo) await supabase.storage.from(CAR_LAUDOS_BUCKET).remove([antigo])
+        const novo = laudoPdf.kind === 'new' ? laudoPdf.enviado?.path : null
+        if (antigo && antigo !== novo) await supabase.storage.from(CAR_LAUDOS_BUCKET).remove([antigo])
       }
 
       await refresh()
