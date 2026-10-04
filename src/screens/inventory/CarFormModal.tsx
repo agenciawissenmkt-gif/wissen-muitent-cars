@@ -160,7 +160,9 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       const tenta = (campo: string, valor: string | null, nome: string) => {
         if (!valor) return
         if ((atual[campo] ?? '').trim()) {
-          if ((atual[campo] ?? '').trim() !== valor) mantidos.push(nome)
+          // "Rede cred auto" e "Rede Cred Auto" sao a mesma coisa: so avisa se mudar de verdade.
+          const igual = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
+          if (igual(atual[campo] ?? '') !== igual(valor)) mantidos.push(nome)
           return
         }
         novos[campo] = valor
