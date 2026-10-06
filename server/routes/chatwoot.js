@@ -111,7 +111,7 @@ async function ensureAdminToken(accountId, tenant, existingToken) {
         body: {
           name: `Wissen Cars (${tenant.nome})`,
           email: `wissen-bot+${tenant.slug}${sufixo}@${domain}`,
-          password: crypto.randomBytes(18).toString('base64url'),
+          password: crypto.randomBytes(18).toString('base64url') + 'Aa1!', // Chatwoot exige maiuscula, numero e simbolo
           confirmed: true,
         },
       })
@@ -368,7 +368,7 @@ router.post(
             body: {
               name: person.name,
               email: person.email,
-              password: crypto.randomBytes(18).toString('base64url'),
+              password: crypto.randomBytes(18).toString('base64url') + 'Aa1!', // Chatwoot exige maiuscula, numero e simbolo
               confirmed: true,
             },
           })
