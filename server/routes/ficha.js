@@ -43,6 +43,7 @@ export const OPCOES = {
   keyless_entry: ['Sim', 'Não'],
   parking_sensor: ['Traseiro', 'Dianteiro e traseiro', 'Não possui'],
   rear_camera: ['Sim', 'Não'],
+  nivel_consumo: ['Econômico', 'Médio', 'Alto'],
 }
 
 const lista = (campo, descricao) => ({ type: ['string', 'null'], enum: [...OPCOES[campo], null], description: descricao })
@@ -75,11 +76,37 @@ export const CAMPOS = {
   keyless_entry: lista('keyless_entry', 'Chave presencial (entrada e partida sem tirar a chave do bolso)'),
   parking_sensor: lista('parking_sensor', 'Sensor de estacionamento'),
   rear_camera: lista('rear_camera', 'Camera de re'),
+  consumo_cidade: {
+    type: ['number', 'null'],
+    description:
+      'Consumo na cidade em km/l, numero, ex: 11.8. Dado do Inmetro (PBEV) ou de testes da imprensa brasileira. Em carro flex, use o consumo com gasolina. Em eletrico, null.',
+  },
+  consumo_estrada: {
+    type: ['number', 'null'],
+    description:
+      'Consumo na estrada em km/l, numero, ex: 14.2. Dado do Inmetro (PBEV) ou de testes da imprensa brasileira. Em carro flex, use o consumo com gasolina. Em eletrico, null.',
+  },
+  nivel_consumo: lista(
+    'nivel_consumo',
+    'Consumo comparado a carros da mesma categoria e porte: Econômico (gasta pouco), Médio ou Alto (carro gastao).',
+  ),
 }
 
 // Os que o cliente mais pergunta. Se a primeira resposta vier sem algum deles,
 // a IA recebe uma segunda pergunta so sobre o que faltou.
-const ESSENCIAIS = ['engine', 'horsepower', 'torque', 'acceleration_0_100', 'trunk_liters', 'transmission', 'fuel', 'traction']
+const ESSENCIAIS = [
+  'engine',
+  'horsepower',
+  'torque',
+  'acceleration_0_100',
+  'trunk_liters',
+  'transmission',
+  'fuel',
+  'traction',
+  'consumo_cidade',
+  'consumo_estrada',
+  'nivel_consumo',
+]
 
 // Como a IA (ou o cadastro antigo) costuma escrever, e para onde isso vai.
 const SINONIMOS = {
@@ -92,6 +119,7 @@ const SINONIMOS = {
   air_conditioning: { 'digital dual zone': 'Dual zone', bizona: 'Dual zone', automatico: 'Digital' },
   carplay_android_auto: { wireless: 'Sem fio', sim: 'Com fio', nao: 'Não possui' },
   parking_sensor: { nao: 'Não possui' },
+  nivel_consumo: { economico: 'Econômico', baixo: 'Econômico', medio: 'Médio', moderado: 'Médio', alto: 'Alto', gastao: 'Alto', elevado: 'Alto' },
 }
 
 function semAcento(texto) {
@@ -162,6 +190,11 @@ export function limpaFicha(ficha) {
       if (n >= 50 && n <= 3000) limpa.trunk_liters = n
       continue
     }
+    if (campo === 'consumo_cidade' || campo === 'consumo_estrada') {
+      const n = numeroDe(valor)
+      if (n >= 2 && n <= 60) limpa[campo] = `${virgula(Math.round(n * 10) / 10)} km/l`
+      continue
+    }
     if (campo === 'acceleration_0_100') {
       const n = numeroDe(valor)
       if (n >= 2 && n <= 30) limpa.acceleration_0_100 = `${virgula(Math.round(n * 10) / 10)} s`
@@ -201,6 +234,8 @@ const INSTRUCOES = [
   '- Numeros (potencia, torque, 0 a 100, porta-malas) existem para qualquer carro: use o dado',
   '  oficial do fabricante ou de testes da imprensa. Nunca responda 0.',
   '- Hibrido e eletrico: potencia e torque combinados do sistema.',
+  '- Consumo (cidade e estrada) em km/l: dado do Inmetro (PBEV) ou da imprensa. Em flex, com gasolina.',
+  '  Nivel de consumo: compare com carros da mesma categoria e porte (Econômico, Médio ou Alto).',
   '- Null so quando voce realmente nao faz ideia. Null e para desconhecimento, nao para duvida pequena.',
   '',
   'Formato:',
