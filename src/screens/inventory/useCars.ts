@@ -29,6 +29,9 @@ export interface CarDraft {
   sunroof: string | null
   carplay_android_auto: string | null
   trunk_liters: number | null
+  consumo_cidade: string | null
+  consumo_estrada: string | null
+  nivel_consumo: string | null
   leather_seats: string | null
   keyless_entry: string | null
   parking_sensor: string | null
