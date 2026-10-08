@@ -209,6 +209,11 @@ export interface Car {
   sunroof: string | null
   carplay_android_auto: string | null
   trunk_liters: number | null
+  /** Consumo da versao, gerado pela IA da ficha: '11,8 km/l' (gasolina no flex). */
+  consumo_cidade?: string | null
+  consumo_estrada?: string | null
+  /** Econômico, Médio ou Alto, comparado a carros da mesma categoria. */
+  nivel_consumo?: string | null
   leather_seats: string | null
   keyless_entry: string | null
   parking_sensor: string | null
@@ -345,4 +350,5 @@ export const SUNROOFS = ['Não possui', 'Teto solar', 'Panorâmico'] as const
 export const CARPLAY_OPTIONS = ['Sem fio', 'Com fio', 'Não possui'] as const
 export const PARKING_SENSORS = ['Traseiro', 'Dianteiro e traseiro', 'Não possui'] as const
 export const YES_NO = ['Sim', 'Não'] as const
+export const NIVEIS_CONSUMO = ['Econômico', 'Médio', 'Alto'] as const
 export const PARTNER_BANKS = ['BV', 'Santander', 'Itaú', 'Bradesco', 'Pan'] as const
