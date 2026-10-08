@@ -8,6 +8,7 @@ import {
   CARPLAY_OPTIONS,
   LAUDO_RESULTADO_LABEL,
   FUELS,
+  NIVEIS_CONSUMO,
   PARKING_SENSORS,
   SUNROOFS,
   TRACTIONS,
@@ -41,7 +42,7 @@ const TEXT_FIELDS = [
   'fuel', 'mileage_km', 'price_brl', 'engine', 'cylinders', 'horsepower', 'torque',
   'acceleration_0_100', 'aspiration', 'traction', 'air_conditioning', 'steering', 'electric_windows',
   'sunroof', 'carplay_android_auto', 'trunk_liters', 'leather_seats', 'keyless_entry', 'parking_sensor',
-  'rear_camera', 'description', 'laudo_resultado', 'laudo_empresa', 'laudo_data', 'laudo_obs',
+  'rear_camera', 'consumo_cidade', 'consumo_estrada', 'nivel_consumo', 'description', 'laudo_resultado', 'laudo_empresa', 'laudo_data', 'laudo_obs',
 ] as const
 
 const BOOL_FIELDS = ['ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade'] as const
@@ -241,6 +242,9 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       keyless_entry: text(form.keyless_entry),
       parking_sensor: text(form.parking_sensor),
       rear_camera: text(form.rear_camera),
+      consumo_cidade: text(form.consumo_cidade),
+      consumo_estrada: text(form.consumo_estrada),
+      nivel_consumo: text(form.nivel_consumo),
       ipva_paid: flag('ipva_paid'),
       licensed: flag('licensed'),
       single_owner: flag('single_owner'),
@@ -350,6 +354,9 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
             <Select label="Tração" options={TRACTIONS} placeholder="Selecione" value={form.traction} onChange={(e) => set('traction', e.target.value)} />
             <Input label="Portas" inputMode="numeric" value={form.doors} onChange={(e) => set('doors', e.target.value)} placeholder="4" />
             <Input label="Porta-malas" inputMode="numeric" value={form.trunk_liters} onChange={(e) => set('trunk_liters', e.target.value)} placeholder="470" hint="Em litros" />
+            <Input label="Consumo na cidade" value={form.consumo_cidade} onChange={(e) => set('consumo_cidade', e.target.value)} placeholder="11,8 km/l" hint="No flex, com gasolina" />
+            <Input label="Consumo na estrada" value={form.consumo_estrada} onChange={(e) => set('consumo_estrada', e.target.value)} placeholder="14,2 km/l" hint="No flex, com gasolina" />
+            <Select label="Nível de consumo" options={NIVEIS_CONSUMO} placeholder="Selecione" value={form.nivel_consumo} onChange={(e) => set('nivel_consumo', e.target.value)} />
           </div>
 
           <h3 className="mb-3 mt-6 text-sm font-bold text-ink-900">Conforto e tecnologia</h3>
