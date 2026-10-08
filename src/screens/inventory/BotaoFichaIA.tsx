@@ -30,6 +30,9 @@ export type FichaIA = {
   sunroof?: string
   carplay_android_auto?: string
   trunk_liters?: number
+  consumo_cidade?: string
+  consumo_estrada?: string
+  nivel_consumo?: string
   leather_seats?: string
   keyless_entry?: string
   parking_sensor?: string
@@ -44,6 +47,7 @@ const NOME_DO_CAMPO: Record<string, string> = {
   electric_windows: 'vidros elétricos', sunroof: 'teto solar', carplay_android_auto: 'CarPlay/Android Auto',
   trunk_liters: 'porta-malas', leather_seats: 'banco de couro', keyless_entry: 'chave presencial',
   parking_sensor: 'sensor de estacionamento', rear_camera: 'câmera de ré',
+  consumo_cidade: 'consumo na cidade', consumo_estrada: 'consumo na estrada', nivel_consumo: 'nível de consumo',
 }
 
 type Props = {
