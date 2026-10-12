@@ -12,6 +12,7 @@ import { Overview } from './screens/Overview'
 import { Implementation } from './screens/Implementation'
 import { Reports } from './screens/Reports'
 import { Offers } from './screens/Offers'
+import { DemoEntrada } from './demo/DemoEntrada'
 
 function SetupNotice() {
   return (
@@ -69,9 +70,14 @@ export default function App() {
   return (
     <BrowserRouter>
       <ToastProvider>
-        <AuthProvider>
-          <Gate />
-        </AuthProvider>
+        {/* Demonstração do painel (botão no login): sem sessão e sem gravar nada. */}
+        <DemoEntrada>
+          {(fase) => (
+            <AuthProvider key={fase}>
+              <Gate />
+            </AuthProvider>
+          )}
+        </DemoEntrada>
       </ToastProvider>
     </BrowserRouter>
   )
