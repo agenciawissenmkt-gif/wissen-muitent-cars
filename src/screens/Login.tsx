@@ -6,6 +6,7 @@ import { Button } from '../ui/Button'
 import { Logo } from '../ui/Logo'
 import { CalendarIcon, CarIcon, GoogleIcon, SparkIcon, WhatsappIcon } from '../ui/icons'
 import { useDemoEntrada } from '../demo/DemoEntrada'
+import { WissenMark } from '../ui/brand'
 
 const HIGHLIGHTS = [
   { icon: <CarIcon />, title: 'Estoque vivo', text: 'Cadastre o veículo com foto e a IA já sabe vender.' },
@@ -130,17 +131,30 @@ export function Login() {
       <motion.button
         type="button"
         onClick={demo.entrar}
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.6 }}
-        className="group fixed bottom-4 right-4 z-40 inline-flex items-center gap-2.5 rounded-2xl border border-brand-200 bg-white/95 py-2.5 pl-2.5 pr-4 text-sm font-bold text-brand-700 shadow-xl shadow-brand-900/10 backdrop-blur transition hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-brand-900/20 sm:bottom-6 sm:right-6"
+        aria-label="Wissen Cars: demonstração do painel"
+        title="Entrar na demonstração do painel"
+        initial={{ opacity: 0, y: 16, scale: 0.96 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ delay: 0.6, type: 'spring', stiffness: 260, damping: 22 }}
+        className="group fixed bottom-5 right-5 z-40 inline-flex items-center gap-4 overflow-hidden rounded-[1.35rem] bg-gradient-to-br from-[#7c3aed] via-[#5b1a96] to-[#3a0d62] py-3.5 pl-3.5 pr-7 text-left text-white shadow-2xl shadow-[#3a0d62]/40 ring-1 ring-white/15 transition hover:-translate-y-1 hover:shadow-[#3a0d62]/55 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-brand-300 sm:bottom-8 sm:right-8"
       >
-        <span className="grid size-8 place-items-center rounded-xl bg-gradient-to-br from-[#5b1a96] to-[#3a0d62] text-white shadow-md transition group-hover:scale-105">
-          <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden>
-            <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.6-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" />
-          </svg>
+        {/* brilho que passa no hover */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 -skew-x-12 bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 transition-all duration-700 group-hover:left-full group-hover:opacity-100"
+        />
+        <span className="relative grid size-14 shrink-0 place-items-center rounded-2xl bg-white shadow-lg shadow-black/20 transition duration-300 group-hover:scale-105 group-hover:rotate-[-4deg]">
+          <WissenMark className="w-9 text-[#5b1a96]" />
         </span>
-        Demonstração do painel
+        <span className="relative flex flex-col leading-none">
+          <span className="text-lg font-extrabold tracking-tight">Wissen Cars</span>
+          <span className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-100">
+            Demonstração
+            <svg viewBox="0 0 20 20" className="size-4 transition group-hover:translate-x-0.5" fill="currentColor" aria-hidden>
+              <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 0 1 .02-1.06L11.17 10 7.23 6.29a.75.75 0 1 1 1.04-1.08l4.5 4.25a.75.75 0 0 1 0 1.08l-4.5 4.25a.75.75 0 0 1-1.06-.02Z" />
+            </svg>
+          </span>
+        </span>
       </motion.button>
     </div>
   )
