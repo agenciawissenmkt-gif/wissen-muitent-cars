@@ -249,15 +249,15 @@ const INSTRUCOES = [
  * reais). A chave `ficha:<pedido>:<chamada>` conta cada ficha gerada uma vez,
  * mesmo quando ela precisou de uma segunda pergunta.
  */
-async function registrarConsumo(tenantId, pedidoId, chamadas) {
+async function registrarConsumo(tenantId, pedidoId, chamadas, agentType = 'ficha_tecnica') {
   if (!chamadas.length) return
   const linhas = chamadas.map((uso, i) => ({
     tenant_id: tenantId,
     model: MODELO.toLowerCase(),
-    agent_type: 'ficha_tecnica',
+    agent_type: agentType,
     prompt_tokens: Math.max(0, Number(uso?.prompt_tokens) || 0),
     completion_tokens: Math.max(0, Number(uso?.completion_tokens) || 0),
-    execution_id: `ficha:${pedidoId}:${i + 1}`,
+    execution_id: `${agentType === 'ficha_tecnica' ? 'ficha' : agentType}:${pedidoId}:${i + 1}`,
   }))
   try {
     await db.insert('ai_usage', linhas)
@@ -272,6 +272,111 @@ function schemaDe(campos) {
   return { type: 'object', properties, required: campos, additionalProperties: false }
 }
 
+/**
+ * Gera a ficha (uma ou duas perguntas a IA) e registra o consumo. Usada pela rota
+ * da loja e pela demonstracao do painel (server/routes/demo.js).
+ */
+export async function gerarFicha({ brand, model, version, ano }, { tenantId, agentType = 'ficha_tecnica' }) {
+  if (!brand || !model) throw new HttpError(400, 'Informe ao menos marca e modelo.')
+  if (!process.env.OPENAI_API_KEY) {
+    throw new HttpError(503, 'IA nao configurada.', 'Falta OPENAI_API_KEY nas variaveis de ambiente.')
+  }
+
+  const carro = [brand, model, version, ano ? `ano modelo ${ano}` : null].filter(Boolean).join(' ')
+  const controle = new AbortController()
+  const inicio = Date.now()
+  const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS)
+  const pedidoId = randomUUID()
+  const consumo = []
+
+  async function perguntar(campos, pedidoExtra) {
+    const corpoBase = {
+      model: MODELO,
+      messages: [
+        { role: 'system', content: INSTRUCOES },
+        { role: 'user', content: `Veiculo: ${carro}${pedidoExtra ? `\n\n${pedidoExtra}` : ''}` },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'ficha_tecnica', strict: true, schema: schemaDe(campos) },
+      },
+    }
+    const chamar = (corpo) =>
+      fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        signal: controle.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: JSON.stringify(corpo),
+      })
+
+    let resposta = await chamar(ESFORCO === 'off' ? corpoBase : { ...corpoBase, reasoning_effort: ESFORCO })
+
+    // Modelo que nao conhece reasoning_effort devolve 400. Tenta sem ele.
+    if (resposta.status === 400 && ESFORCO !== 'off') {
+      const detalhe = await resposta.text()
+      if (!/reasoning_effort/i.test(detalhe)) {
+        console.error('[ficha] openai respondeu 400', detalhe.slice(0, 300))
+        throw new HttpError(502, 'A IA recusou o pedido. Tente de novo.')
+      }
+      resposta = await chamar(corpoBase)
+    }
+
+    if (!resposta.ok) {
+      const detalhe = await resposta.text()
+      console.error('[ficha] openai respondeu', resposta.status, detalhe.slice(0, 300))
+      throw new HttpError(502, 'A IA nao respondeu agora. Tente de novo.')
+    }
+
+    const corpo = await resposta.json()
+    if (corpo?.usage) consumo.push(corpo.usage)
+    const bruto = corpo?.choices?.[0]?.message?.content
+    if (!bruto) throw new HttpError(502, 'A IA devolveu resposta vazia.')
+    try {
+      return JSON.parse(bruto)
+    } catch {
+      console.error('[ficha] json invalido:', String(bruto).slice(0, 300))
+      throw new HttpError(502, 'A IA devolveu algo fora do formato.')
+    }
+  }
+
+  let limpa
+  try {
+    limpa = limpaFicha(await perguntar(Object.keys(CAMPOS)))
+
+    // Segunda volta, so para o que faltou dos essenciais -- se ainda houver tempo.
+    const faltando = ESSENCIAIS.filter((c) => !(c in limpa))
+    if (faltando.length && Date.now() - inicio < TIMEOUT_MS * 0.45) {
+      try {
+        const extra = limpaFicha(
+          await perguntar(
+            faltando,
+            'Faltaram estes dados na ficha. Informe o valor oficial do fabricante ou de testes da imprensa para esta versao.',
+          ),
+        )
+        for (const [campo, valor] of Object.entries(extra)) if (!(campo in limpa)) limpa[campo] = valor
+      } catch (erro) {
+        // A primeira resposta ja serve; a segunda volta e so um reforco.
+        console.error('[ficha] segunda volta falhou:', erro?.message || erro)
+      }
+    }
+  } catch (erro) {
+    if (erro instanceof HttpError) throw erro
+    if (erro.name === 'AbortError') throw new HttpError(504, 'A IA demorou demais. Tente de novo.')
+    throw new HttpError(502, 'Nao consegui falar com a IA agora.')
+  } finally {
+    clearTimeout(relogio)
+    await registrarConsumo(tenantId, pedidoId, consumo, agentType)
+  }
+
+  return {
+    ficha: limpa,
+    preenchidos: Object.keys(limpa).length,
+    total: Object.keys(CAMPOS).length,
+    faltaram: Object.keys(CAMPOS).filter((c) => !(c in limpa)),
+    modelo_usado: MODELO,
+  }
+}
+
 router.post(
   '/',
   route(async (req, res) => {
@@ -279,104 +384,7 @@ router.post(
 
     const { brand, model, version } = req.body || {}
     const ano = req.body?.model_year || req.body?.year
-    if (!brand || !model) throw new HttpError(400, 'Informe ao menos marca e modelo.')
-    if (!process.env.OPENAI_API_KEY) {
-      throw new HttpError(503, 'IA nao configurada.', 'Falta OPENAI_API_KEY nas variaveis de ambiente.')
-    }
-
-    const carro = [brand, model, version, ano ? `ano modelo ${ano}` : null].filter(Boolean).join(' ')
-    const controle = new AbortController()
-    const inicio = Date.now()
-    const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS)
-    const pedidoId = randomUUID()
-    const consumo = []
-
-    async function perguntar(campos, pedidoExtra) {
-      const corpoBase = {
-        model: MODELO,
-        messages: [
-          { role: 'system', content: INSTRUCOES },
-          { role: 'user', content: `Veiculo: ${carro}${pedidoExtra ? `\n\n${pedidoExtra}` : ''}` },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: { name: 'ficha_tecnica', strict: true, schema: schemaDe(campos) },
-        },
-      }
-      const chamar = (corpo) =>
-        fetch('https://api.openai.com/v1/chat/completions', {
-          method: 'POST',
-          signal: controle.signal,
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-          body: JSON.stringify(corpo),
-        })
-
-      let resposta = await chamar(ESFORCO === 'off' ? corpoBase : { ...corpoBase, reasoning_effort: ESFORCO })
-
-      // Modelo que nao conhece reasoning_effort devolve 400. Tenta sem ele.
-      if (resposta.status === 400 && ESFORCO !== 'off') {
-        const detalhe = await resposta.text()
-        if (!/reasoning_effort/i.test(detalhe)) {
-          console.error('[ficha] openai respondeu 400', detalhe.slice(0, 300))
-          throw new HttpError(502, 'A IA recusou o pedido. Tente de novo.')
-        }
-        resposta = await chamar(corpoBase)
-      }
-
-      if (!resposta.ok) {
-        const detalhe = await resposta.text()
-        console.error('[ficha] openai respondeu', resposta.status, detalhe.slice(0, 300))
-        throw new HttpError(502, 'A IA nao respondeu agora. Tente de novo.')
-      }
-
-      const corpo = await resposta.json()
-      if (corpo?.usage) consumo.push(corpo.usage)
-      const bruto = corpo?.choices?.[0]?.message?.content
-      if (!bruto) throw new HttpError(502, 'A IA devolveu resposta vazia.')
-      try {
-        return JSON.parse(bruto)
-      } catch {
-        console.error('[ficha] json invalido:', String(bruto).slice(0, 300))
-        throw new HttpError(502, 'A IA devolveu algo fora do formato.')
-      }
-    }
-
-    let limpa
-    try {
-      limpa = limpaFicha(await perguntar(Object.keys(CAMPOS)))
-
-      // Segunda volta, so para o que faltou dos essenciais -- se ainda houver tempo.
-      const faltando = ESSENCIAIS.filter((c) => !(c in limpa))
-      if (faltando.length && Date.now() - inicio < TIMEOUT_MS * 0.45) {
-        try {
-          const extra = limpaFicha(
-            await perguntar(
-              faltando,
-              'Faltaram estes dados na ficha. Informe o valor oficial do fabricante ou de testes da imprensa para esta versao.',
-            ),
-          )
-          for (const [campo, valor] of Object.entries(extra)) if (!(campo in limpa)) limpa[campo] = valor
-        } catch (erro) {
-          // A primeira resposta ja serve; a segunda volta e so um reforco.
-          console.error('[ficha] segunda volta falhou:', erro?.message || erro)
-        }
-      }
-    } catch (erro) {
-      if (erro instanceof HttpError) throw erro
-      if (erro.name === 'AbortError') throw new HttpError(504, 'A IA demorou demais. Tente de novo.')
-      throw new HttpError(502, 'Nao consegui falar com a IA agora.')
-    } finally {
-      clearTimeout(relogio)
-      await registrarConsumo(tenant.id, pedidoId, consumo)
-    }
-
-    res.json({
-      ficha: limpa,
-      preenchidos: Object.keys(limpa).length,
-      total: Object.keys(CAMPOS).length,
-      faltaram: Object.keys(CAMPOS).filter((c) => !(c in limpa)),
-      modelo_usado: MODELO,
-    })
+    res.json(await gerarFicha({ brand, model, version, ano }, { tenantId: tenant.id }))
   }),
 )
 

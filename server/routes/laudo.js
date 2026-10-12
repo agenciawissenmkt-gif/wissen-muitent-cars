@@ -119,22 +119,94 @@ function textoDaResposta(corpo) {
   return texto
 }
 
-async function registrarConsumo(tenantId, pedidoId, modelo, uso) {
+async function registrarConsumo(tenantId, pedidoId, modelo, uso, agentType = 'leitura_laudo') {
   if (!uso) return
   try {
     await db.insert('ai_usage', [
       {
         tenant_id: tenantId,
         model: String(modelo).toLowerCase(),
-        agent_type: 'leitura_laudo',
+        agent_type: agentType,
         prompt_tokens: Math.max(0, Number(uso.input_tokens) || 0),
         completion_tokens: Math.max(0, Number(uso.output_tokens) || 0),
-        execution_id: `laudo:${pedidoId}`,
+        execution_id: `${agentType === 'leitura_laudo' ? 'laudo' : agentType}:${pedidoId}`,
       },
     ])
   } catch (erro) {
     // Registro de custo nunca pode impedir a loja de receber a leitura.
     console.error('[laudo] nao consegui registrar o consumo:', erro?.message || erro)
+  }
+}
+
+/**
+ * Le o PDF com a IA. `arquivo` e a parte input_file da Responses API: { type, file_url }
+ * para o PDF no storage da loja, ou { type, filename, file_data } para a demonstracao do
+ * painel, que nao grava nada (server/routes/demo.js).
+ */
+export async function lerLaudoPdf(arquivo, { tenantId, agentType = 'leitura_laudo' }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new HttpError(503, 'IA nao configurada.', 'Falta OPENAI_API_KEY nas variaveis de ambiente.')
+  }
+
+  const controle = new AbortController()
+  const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS)
+  const pedidoId = randomUUID()
+
+  try {
+    for (let i = 0; i < MODELOS.length; i++) {
+      const modelo = MODELOS[i]
+      const resposta = await fetch('https://api.openai.com/v1/responses', {
+        method: 'POST',
+        signal: controle.signal,
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+        body: JSON.stringify({
+          model: modelo,
+          reasoning: { effort: 'low' },
+          max_output_tokens: 3000,
+          text: { format: { type: 'json_schema', name: 'leitura_laudo', strict: true, schema: SCHEMA } },
+          input: [
+            { role: 'system', content: INSTRUCOES },
+            {
+              role: 'user',
+              content: [
+                arquivo,
+                { type: 'input_text', text: 'Leia este laudo e preencha o JSON.' },
+              ],
+            },
+          ],
+        }),
+      })
+
+      if (!resposta.ok) {
+        const detalhe = await resposta.text()
+        // Modelo que a conta nao tem (ou que nao aceita algum parametro): tenta o proximo.
+        if ((resposta.status === 400 || resposta.status === 404) && i < MODELOS.length - 1 && /model|reasoning/i.test(detalhe)) {
+          console.error(`[laudo] ${modelo} recusou, tentando o proximo:`, detalhe.slice(0, 200))
+          continue
+        }
+        console.error('[laudo] openai respondeu', resposta.status, detalhe.slice(0, 300))
+        throw new HttpError(502, 'Nao consegui ler o PDF agora. Preencha os campos a mao ou tente de novo.')
+      }
+
+      const corpo = await resposta.json()
+      await registrarConsumo(tenantId, pedidoId, modelo, corpo?.usage, agentType)
+      const bruto = textoDaResposta(corpo)
+      let json
+      try {
+        json = JSON.parse(bruto)
+      } catch {
+        console.error('[laudo] json invalido:', String(bruto).slice(0, 300))
+        throw new HttpError(502, 'A leitura do PDF veio fora do formato. Tente de novo.')
+      }
+      return { leitura: limpaLeitura(json), modelo_usado: modelo }
+    }
+    throw new HttpError(502, 'Nao consegui ler o PDF agora.')
+  } catch (erro) {
+    if (erro instanceof HttpError) throw erro
+    if (erro?.name === 'AbortError') throw new HttpError(504, 'A leitura do PDF demorou demais. Preencha a mao ou tente de novo.')
+    throw new HttpError(502, 'Nao consegui falar com a IA agora.')
+  } finally {
+    clearTimeout(relogio)
   }
 }
 
@@ -149,71 +221,7 @@ router.post(
     if (!url.startsWith(prefixoDaLoja(tenant.id)) || !/\.pdf$/i.test(url)) {
       throw new HttpError(400, 'Esse PDF nao e do cadastro desta loja.')
     }
-    if (!process.env.OPENAI_API_KEY) {
-      throw new HttpError(503, 'IA nao configurada.', 'Falta OPENAI_API_KEY nas variaveis de ambiente.')
-    }
-
-    const controle = new AbortController()
-    const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS)
-    const pedidoId = randomUUID()
-
-    try {
-      for (let i = 0; i < MODELOS.length; i++) {
-        const modelo = MODELOS[i]
-        const resposta = await fetch('https://api.openai.com/v1/responses', {
-          method: 'POST',
-          signal: controle.signal,
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-          body: JSON.stringify({
-            model: modelo,
-            reasoning: { effort: 'low' },
-            max_output_tokens: 3000,
-            text: { format: { type: 'json_schema', name: 'leitura_laudo', strict: true, schema: SCHEMA } },
-            input: [
-              { role: 'system', content: INSTRUCOES },
-              {
-                role: 'user',
-                content: [
-                  { type: 'input_file', file_url: url },
-                  { type: 'input_text', text: 'Leia este laudo e preencha o JSON.' },
-                ],
-              },
-            ],
-          }),
-        })
-
-        if (!resposta.ok) {
-          const detalhe = await resposta.text()
-          // Modelo que a conta nao tem (ou que nao aceita algum parametro): tenta o proximo.
-          if ((resposta.status === 400 || resposta.status === 404) && i < MODELOS.length - 1 && /model|reasoning/i.test(detalhe)) {
-            console.error(`[laudo] ${modelo} recusou, tentando o proximo:`, detalhe.slice(0, 200))
-            continue
-          }
-          console.error('[laudo] openai respondeu', resposta.status, detalhe.slice(0, 300))
-          throw new HttpError(502, 'Nao consegui ler o PDF agora. Preencha os campos a mao ou tente de novo.')
-        }
-
-        const corpo = await resposta.json()
-        await registrarConsumo(tenant.id, pedidoId, modelo, corpo?.usage)
-        const bruto = textoDaResposta(corpo)
-        let json
-        try {
-          json = JSON.parse(bruto)
-        } catch {
-          console.error('[laudo] json invalido:', String(bruto).slice(0, 300))
-          throw new HttpError(502, 'A leitura do PDF veio fora do formato. Tente de novo.')
-        }
-        res.json({ leitura: limpaLeitura(json), modelo_usado: modelo })
-        return
-      }
-      throw new HttpError(502, 'Nao consegui ler o PDF agora.')
-    } catch (erro) {
-      if (erro instanceof HttpError) throw erro
-      if (erro?.name === 'AbortError') throw new HttpError(504, 'A leitura do PDF demorou demais. Preencha a mao ou tente de novo.')
-      throw new HttpError(502, 'Nao consegui falar com a IA agora.')
-    } finally {
-      clearTimeout(relogio)
-    }
+    res.json(await lerLaudoPdf({ type: 'input_file', file_url: url }, { tenantId: tenant.id }))
   }),
 )
 
