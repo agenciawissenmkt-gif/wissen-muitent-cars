@@ -1,4 +1,6 @@
 import { supabase } from './supabase'
+import { isDemo } from '../demo/demo'
+import { demoRequest } from '../demo/demoApi'
 
 /**
  * Chamadas ao back-end de provisionamento (server/index.js). Ele existe para que
@@ -19,6 +21,17 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // Demonstração do painel: ficha e laudo pela IA de verdade; Google, WhatsApp e
+  // central de atendimento desligados (src/demo/demoApi.ts).
+  if (isDemo()) {
+    try {
+      return await demoRequest<T>(path, init)
+    } catch (err) {
+      const e = err as { message?: string; status?: number; hint?: string }
+      throw new ApiError(e?.message || 'Indisponível na demonstração.', e?.status ?? 403, e?.hint)
+    }
+  }
+
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
 
