@@ -5,6 +5,7 @@ import { ACCESS_ERROR_TEXT, initialAccessError } from '../core/access'
 import { Button } from '../ui/Button'
 import { Logo } from '../ui/Logo'
 import { CalendarIcon, CarIcon, GoogleIcon, SparkIcon, WhatsappIcon } from '../ui/icons'
+import { useDemoEntrada } from '../demo/DemoEntrada'
 
 const HIGHLIGHTS = [
   { icon: <CarIcon />, title: 'Estoque vivo', text: 'Cadastre o veículo com foto e a IA já sabe vender.' },
@@ -14,6 +15,7 @@ const HIGHLIGHTS = [
 
 export function Login() {
   const { signInWithGoogle } = useAuth()
+  const demo = useDemoEntrada()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(initialAccessError ? ACCESS_ERROR_TEXT[initialAccessError] : null)
 
@@ -113,6 +115,9 @@ export function Login() {
           {error && (
             <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
           )}
+          {demo.erro && (
+            <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{demo.erro}</p>
+          )}
 
           <p className="mt-8 text-xs leading-relaxed text-ink-400">
             Ao continuar você concorda com os termos de uso da plataforma. Usamos sua conta Google apenas para
@@ -120,6 +125,23 @@ export function Login() {
           </p>
         </motion.div>
       </div>
+
+      {/* Demonstração: entra direto num painel de exemplo, sem login e sem gravar nada. */}
+      <motion.button
+        type="button"
+        onClick={demo.entrar}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="group fixed bottom-4 right-4 z-40 inline-flex items-center gap-2.5 rounded-2xl border border-brand-200 bg-white/95 py-2.5 pl-2.5 pr-4 text-sm font-bold text-brand-700 shadow-xl shadow-brand-900/10 backdrop-blur transition hover:-translate-y-0.5 hover:border-brand-400 hover:shadow-brand-900/20 sm:bottom-6 sm:right-6"
+      >
+        <span className="grid size-8 place-items-center rounded-xl bg-gradient-to-br from-[#5b1a96] to-[#3a0d62] text-white shadow-md transition group-hover:scale-105">
+          <svg viewBox="0 0 24 24" className="size-4" fill="currentColor" aria-hidden>
+            <path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l10.6-6.86a1 1 0 0 0 0-1.7L9.52 4.29A1 1 0 0 0 8 5.14Z" />
+          </svg>
+        </span>
+        Demonstração do painel
+      </motion.button>
     </div>
   )
 }
