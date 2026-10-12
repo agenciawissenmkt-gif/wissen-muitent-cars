@@ -8,6 +8,7 @@ import provisioningRoutes from './routes/provisioning.js'
 import fichaRoutes from './routes/ficha.js'
 import laudoRoutes from './routes/laudo.js'
 import internoRoutes from './routes/interno.js'
+import demoRoutes from './routes/demo.js'
 
 /**
  * Back-end de provisionamento do Wissen Cars.
@@ -25,6 +26,9 @@ const app = express()
 
 // Na Vercel o front e a API vivem na mesma origem, então o CORS só importa em dev.
 app.use(cors({ origin: process.env.APP_URL || true }))
+// Demonstracao do painel: sem sessao e sem gravar nada. Fica antes do parser
+// global porque o PDF do laudo vem no corpo (ate 3 MB) -- ver routes/demo.js.
+app.use('/api/demo', demoRoutes)
 app.use(express.json({ limit: '1mb' }))
 
 app.get('/api/health', (_req, res) => {
