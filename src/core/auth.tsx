@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabase } from './supabase'
+import { DEMO_SESSAO, DEMO_USUARIO, isDemo, sairDemo } from '../demo/demo'
 
 interface AuthValue {
   session: Session | null
@@ -33,7 +34,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo<AuthValue>(
-    () => ({
+    () =>
+      // Demonstração do painel: usuário de mentira, sem sessão no Supabase.
+      // "Sair" encerra a demonstração e volta para a tela de login.
+      isDemo()
+        ? {
+            session: DEMO_SESSAO,
+            user: DEMO_USUARIO,
+            loading: false,
+            async signInWithGoogle() {},
+            async signOut() {
+              sairDemo()
+            },
+          }
+        : {
       session,
       user: session?.user ?? null,
       loading,
@@ -50,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async signOut() {
         await supabase.auth.signOut()
       },
-    }),
+    },
     [session, loading],
   )
 

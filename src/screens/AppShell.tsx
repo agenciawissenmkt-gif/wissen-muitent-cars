@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '../core/auth'
 import { useTenant } from '../core/tenant'
+import { isDemo } from '../demo/demo'
 import { Logo } from '../ui/Logo'
 import { Spinner } from '../ui/Button'
 import { CarIcon, ChartIcon, KeyIcon, LockIcon, LogoutIcon, MenuIcon, ReportIcon, SettingsIcon } from '../ui/icons'
@@ -121,6 +122,22 @@ function SuspendedNotice({ reason }: { reason: string }) {
   )
 }
 
+/** Faixa fixa da demonstração: deixa claro que nada aqui é gravado de verdade. */
+function DemoBanner() {
+  const { signOut } = useAuth()
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-gradient-to-r from-[#3a0d62] via-brand-700 to-[#5b1a96] px-4 py-2 text-center text-xs text-white">
+      <span className="rounded-full bg-white/15 px-2 py-0.5 font-bold uppercase tracking-wider">Demonstração</span>
+      <span className="text-brand-100">
+        Painel de exemplo com a loja modelo. Pode testar à vontade: nada aqui é gravado e nada é enviado.
+      </span>
+      <button type="button" onClick={() => void signOut()} className="font-bold underline underline-offset-2 hover:text-brand-200">
+        Sair da demonstração
+      </button>
+    </div>
+  )
+}
+
 export function AppShell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { loading, error, block } = useTenant()
@@ -183,6 +200,8 @@ export function AppShell() {
             </div>
           )}
         </AnimatePresence>
+
+        {isDemo() && <DemoBanner />}
 
         <main className="flex-1">
           {loading ? (
