@@ -11,7 +11,8 @@ export type CarStatus = 'ativo' | 'reservado' | 'vendido'
 
 export type OnboardingStep = 'perfil' | 'chatwoot' | 'calendar' | 'evolution' | 'concluido'
 
-export type InspectionType = 'nenhum' | 'pesquisa' | 'completo'
+/** 'pesquisa' e 'completo' sao os valores antigos: hoje tudo e 'historico' (historico veicular). */
+export type InspectionType = 'nenhum' | 'historico' | 'pesquisa' | 'completo'
 
 export type AgentType = 'descoberta' | 'encantamento' | 'fechamento'
 
@@ -235,7 +236,7 @@ export interface Car {
   reserva_telefone?: string | null
   reserva_conversa_url?: string | null
   reserva_obs?: string | null
-  /** Laudo cautelar deste carro. A Julia fala dele e envia o PDF pelo WhatsApp. */
+  /** Historico veicular deste carro. A Julia fala dele e envia o PDF pelo WhatsApp. */
   laudo_resultado?: LaudoResultado | null
   laudo_empresa?: string | null
   laudo_data?: string | null
@@ -268,9 +269,10 @@ export const AGENT_HINT: Record<AgentType, string> = {
 }
 
 export const INSPECTION_LABEL: Record<InspectionType, string> = {
-  nenhum: 'Não trabalhamos com laudo',
-  pesquisa: 'Pesquisa veicular',
-  completo: 'Laudo cautelar completo',
+  nenhum: 'Não trabalhamos com histórico veicular',
+  historico: 'Histórico veicular',
+  pesquisa: 'Histórico veicular',
+  completo: 'Histórico veicular',
 }
 
 export type CarOfferTipo = 'venda' | 'consignacao' | 'indefinido'

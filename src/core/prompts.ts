@@ -14,11 +14,9 @@ export function defaultPrompts(store: Partial<Store> & { name?: string }): Recor
   const banks = store.partner_banks?.length ? store.partner_banks.join(', ') : 'os bancos parceiros da loja'
 
   const laudo =
-    store.inspection_type === 'completo'
-      ? 'todos os veículos têm laudo cautelar completo aprovado'
-      : store.inspection_type === 'pesquisa'
-        ? 'todos os veículos passam por pesquisa veicular'
-        : null
+    store.has_inspection !== false && store.inspection_type && store.inspection_type !== 'nenhum'
+      ? 'todos os veículos têm histórico veicular'
+      : null
 
   const regras = [
     store.accepts_trade ? 'aceitamos o carro do cliente como parte do pagamento' : 'não trabalhamos com troca',
