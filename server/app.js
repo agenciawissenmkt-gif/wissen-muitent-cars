@@ -9,6 +9,7 @@ import fichaRoutes from './routes/ficha.js'
 import laudoRoutes from './routes/laudo.js'
 import internoRoutes from './routes/interno.js'
 import demoRoutes from './routes/demo.js'
+import olxRoutes from './routes/olx.js'
 
 /**
  * Back-end de provisionamento do Wissen Cars.
@@ -40,6 +41,7 @@ app.get('/api/health', (_req, res) => {
       chatwoot: Boolean(process.env.CHATWOOT_BASE_URL && process.env.CHATWOOT_PLATFORM_TOKEN),
       evolution: Boolean(process.env.EVOLUTION_API_URL && process.env.EVOLUTION_API_KEY),
       n8n: Boolean(process.env.N8N_PROVISIONING_WEBHOOK_URL),
+      olx: Boolean(process.env.OLX_CLIENT_ID && process.env.OLX_CLIENT_SECRET),
       simulate: process.env.WISSEN_SIMULATE === 'true',
     },
   })
@@ -52,6 +54,7 @@ app.use('/api/provisioning', provisioningRoutes)
 app.use('/api/ficha', fichaRoutes)
 app.use('/api/laudo', laudoRoutes)
 app.use('/api/interno', internoRoutes)
+app.use('/api/olx', olxRoutes)
 
 app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Rota não encontrada.' })
