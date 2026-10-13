@@ -34,7 +34,7 @@ const UFS = [
   'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO',
 ] as const
 
-const INSPECTION_OPTIONS = ['nenhum', 'pesquisa', 'completo'] as const
+const INSPECTION_OPTIONS = ['nenhum', 'historico'] as const
 
 /** Cada bloco da etapa 1. O título deixa claro o que aquele grupo alimenta na IA. */
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
@@ -158,7 +158,7 @@ export function StepRules({ onNext }: { onNext: () => void }) {
     setTestDrive(store.offers_test_drive)
     setDelivery(store.offers_delivery)
     setDocumentation(store.offers_documentation)
-    setInspection(store.has_inspection ? store.inspection_type : 'nenhum')
+    setInspection(store.has_inspection ? 'historico' : 'nenhum')
     setWarrantyMonths(store.warranty_months ? String(store.warranty_months) : '')
     setWarrantyDetails(store.warranty_details ?? '')
     setDeliveryDetails(store.delivery_details ?? '')
@@ -667,7 +667,7 @@ export function StepRules({ onNext }: { onNext: () => void }) {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <Select
-                label="Laudo dos veículos"
+                label="Histórico veicular dos veículos"
                 options={INSPECTION_OPTIONS.map((option) => INSPECTION_LABEL[option])}
                 value={INSPECTION_LABEL[inspection]}
                 onChange={(e) => {
