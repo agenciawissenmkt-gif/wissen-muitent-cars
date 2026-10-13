@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { CAR_LAUDOS_BUCKET, CAR_PHOTOS_BUCKET, supabase } from '../../core/supabase'
 import type { Car, LaudoResultado } from '../../core/types'
+import { olxDepoisDeMudar } from '../../core/olx'
 
 /** Campos editáveis pelo painel — espelham as colunas de `cars`. */
 export interface CarDraft {
@@ -47,6 +48,21 @@ export interface CarDraft {
   laudo_empresa: string | null
   laudo_data: string | null
   laudo_obs: string | null
+  placa: string | null
+  situacao_financeira: 'quitado' | 'financiado' | null
+  chave_reserva: boolean
+  manual_proprietario: boolean
+  blindado: boolean
+  de_leilao: boolean
+  com_multas: boolean
+  /** Só vão no salvamento quando a loja tem OLX conectada (senão ficam como estão). */
+  olx_marca_id?: number | null
+  olx_modelo_id?: number | null
+  olx_versao_id?: number | null
+  olx_marca?: string | null
+  olx_modelo?: string | null
+  olx_versao?: string | null
+  olx_publicar?: boolean
 }
 
 /** O que fazer com o PDF do laudo ao salvar: manter o atual, subir um novo ou tirar. */
@@ -251,6 +267,8 @@ export function useCars({ tenantId, storeId }: Options) {
       }
 
       await refresh()
+      // OLX: so faz algo se a loja conectou (em Integracoes). Em segundo plano.
+      olxDepoisDeMudar(tenantId, id)
       return id
     },
     [tenantId, storeId, refresh],
@@ -268,6 +286,7 @@ export function useCars({ tenantId, storeId }: Options) {
 
       if (paths.length) await supabase.storage.from(CAR_PHOTOS_BUCKET).remove(paths)
       if (car.laudo_pdf_path) await supabase.storage.from(CAR_LAUDOS_BUCKET).remove([car.laudo_pdf_path])
+      olxDepoisDeMudar(car.tenant_id, car.id)
       await refresh()
     },
     [refresh],
@@ -285,6 +304,7 @@ export function useCars({ tenantId, storeId }: Options) {
       const paths = car.car_photos.map((photo) => photo.storage_path).filter((path): path is string => Boolean(path))
       await supabase.from('car_photos').delete().eq('car_id', car.id)
       if (paths.length) await supabase.storage.from(CAR_PHOTOS_BUCKET).remove(paths)
+      olxDepoisDeMudar(car.tenant_id, car.id)
       await refresh()
     },
     [refresh],
@@ -306,6 +326,8 @@ export function useCars({ tenantId, storeId }: Options) {
       setCars((current) =>
         current.map((item) => (item.id === car.id ? sortPhotos((updated as Car | null) ?? { ...item, status: next }) : item)),
       )
+      // Sinal recebido tira da OLX; voltar para Disponivel publica de novo.
+      olxDepoisDeMudar(car.tenant_id, car.id)
       return next
     },
     [],

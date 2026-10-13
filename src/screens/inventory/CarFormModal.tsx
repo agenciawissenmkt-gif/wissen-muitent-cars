@@ -23,6 +23,9 @@ import { subirLaudoPdf, type CarDraft, type LaudoPdf, type PhotoItem } from './u
 import { lerLaudo } from '../../core/api'
 import { useTenant } from '../../core/tenant'
 import { BotaoFichaIA } from './BotaoFichaIA'
+import { useOlx } from '../../core/olx'
+import { olxAtualizar } from '../../core/api'
+import { OLX_VAZIO, OlxSecao, type OlxCampos } from './OlxSecao'
 
 interface Props {
   open: boolean
@@ -43,9 +46,13 @@ const TEXT_FIELDS = [
   'acceleration_0_100', 'aspiration', 'traction', 'air_conditioning', 'steering', 'electric_windows',
   'sunroof', 'carplay_android_auto', 'trunk_liters', 'leather_seats', 'keyless_entry', 'parking_sensor',
   'rear_camera', 'consumo_cidade', 'consumo_estrada', 'nivel_consumo', 'description', 'laudo_resultado', 'laudo_empresa', 'laudo_data', 'laudo_obs',
+  'placa', 'situacao_financeira',
 ] as const
 
-const BOOL_FIELDS = ['ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade'] as const
+const BOOL_FIELDS = [
+  'ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade',
+  'chave_reserva', 'manual_proprietario', 'blindado', 'de_leilao', 'com_multas',
+] as const
 
 const EMPTY_TEXT = Object.fromEntries(TEXT_FIELDS.map((field) => [field, ''])) as Record<string, string>
 
@@ -54,7 +61,18 @@ const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
   { key: 'dealer_revisions', label: 'Revisões em concessionária' },
   { key: 'ipva_paid', label: 'IPVA pago' },
   { key: 'licensed', label: 'Licenciado' },
+  { key: 'chave_reserva', label: 'Chave reserva' },
+  { key: 'manual_proprietario', label: 'Manual do proprietário' },
+  { key: 'blindado', label: 'Blindado' },
+  { key: 'de_leilao', label: 'De leilão' },
+  { key: 'com_multas', label: 'Com multas' },
 ]
+
+const SITUACOES_FINANCEIRAS = { quitado: 'Quitado', financiado: 'Financiado' } as const
+
+/** Placa como a OLX valida: ABC1234 ou ABC1D23 (maiúscula, sem traço). */
+const limpaPlaca = (valor: string) => valor.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
+const placaOk = (valor: string) => !valor || /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(valor)
 
 const LAUDO_RESULTADOS = Object.keys(LAUDO_RESULTADO_LABEL) as LaudoResultado[]
 const LAUDO_MAX_BYTES = 10 * 1024 * 1024
@@ -76,6 +94,27 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const tenantId = store?.tenant_id ?? null
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // OLX: só aparece e só grava quando a loja conectou em Integrações.
+  const olx = useOlx(tenantId)
+  const [olxCampos, setOlxCampos] = useState<OlxCampos>(OLX_VAZIO)
+  // Cada abertura do cadastro monta a parte da OLX de novo, ja com os dados do carro.
+  const [abertura, setAbertura] = useState(0)
+  const recarregarOlx = olx.recarregar
+  const olxConectada = Boolean(olx.conexao)
+
+  useEffect(() => {
+    if (!open || !tenantId) return
+    // Atualiza a situação dos anúncios na OLX ao abrir (em segundo plano).
+    void recarregarOlx().then(async (conexao) => {
+      if (!conexao) return
+      try {
+        const { atualizados } = await olxAtualizar(tenantId)
+        if (atualizados) await recarregarOlx()
+      } catch {
+        // Sem OLX conectada ou OLX fora do ar: o cadastro segue normal.
+      }
+    })
+  }, [open, tenantId, recarregarOlx])
 
   useEffect(() => {
     if (!open) return
@@ -83,6 +122,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     setLaudoPdf({ kind: 'keep' })
     setAvisoLaudo(null)
     setLendoLaudo(false)
+    setAbertura((n) => n + 1)
     leituraAtual.current++
 
     if (car) {
@@ -95,6 +135,15 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       if (!next.model_year && car.year) next.model_year = String(car.year)
       setForm({ ...next, status: car.status } as FormState)
       setFlags(Object.fromEntries(BOOL_FIELDS.map((field) => [field, Boolean(car[field])])))
+      setOlxCampos({
+        olx_marca_id: car.olx_marca_id ?? null,
+        olx_marca: car.olx_marca ?? null,
+        olx_modelo_id: car.olx_modelo_id ?? null,
+        olx_modelo: car.olx_modelo ?? null,
+        olx_versao_id: car.olx_versao_id ?? null,
+        olx_versao: car.olx_versao ?? null,
+        olx_publicar: car.olx_publicar !== false,
+      })
       setPhotos(
         car.car_photos.map((photo) => ({
           kind: 'existing' as const,
@@ -106,6 +155,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     } else {
       setForm({ ...EMPTY_TEXT, doors: '4', status: 'ativo' } as FormState)
       setFlags({ accepts_trade: true })
+      setOlxCampos(OLX_VAZIO)
       setPhotos([])
     }
   }, [open, car])
@@ -208,6 +258,11 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       setError('Informe pelo menos o modelo do veículo.')
       return
     }
+    const placa = limpaPlaca(form.placa ?? '')
+    if (!placaOk(placa)) {
+      setError('A placa precisa ter 7 caracteres, no formato ABC1234 ou ABC1D23.')
+      return
+    }
 
     setSaving(true)
     setError(null)
@@ -258,6 +313,16 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       laudo_empresa: text(form.laudo_empresa),
       laudo_data: text(form.laudo_data),
       laudo_obs: text(form.laudo_obs),
+      placa: placa || null,
+      situacao_financeira:
+        form.situacao_financeira === 'quitado' || form.situacao_financeira === 'financiado' ? form.situacao_financeira : null,
+      chave_reserva: flag('chave_reserva'),
+      manual_proprietario: flag('manual_proprietario'),
+      blindado: flag('blindado'),
+      de_leilao: flag('de_leilao'),
+      com_multas: flag('com_multas'),
+      // Sem OLX conectada estes campos nem vão no salvamento.
+      ...(olxConectada ? olxCampos : {}),
     }
 
     try {
@@ -318,6 +383,15 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
             <Input label="Ano do modelo" inputMode="numeric" value={form.model_year} onChange={(e) => set('model_year', e.target.value)} placeholder="2023" />
             <Input label="Cor" value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="Prata" />
             <Input label="Quilometragem" inputMode="numeric" value={form.mileage_km} onChange={(e) => set('mileage_km', e.target.value)} placeholder="45000" hint="Somente números" />
+            <Input
+              label="Placa"
+              value={form.placa}
+              onChange={(e) => set('placa', limpaPlaca(e.target.value))}
+              placeholder="ABC1D23"
+              autoCapitalize="characters"
+              hint="Não aparece no anúncio nem para os clientes."
+              error={placaOk(form.placa ?? '') ? undefined : 'Formato ABC1234 ou ABC1D23'}
+            />
             <Input
               label="Preço"
               prefix="R$"
@@ -397,7 +471,38 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
               </CheckPill>
             ))}
           </div>
+          <Field label="Situação financeira" className="mt-4">
+            <div className="flex flex-wrap gap-2">
+              {(Object.keys(SITUACOES_FINANCEIRAS) as (keyof typeof SITUACOES_FINANCEIRAS)[]).map((chave) => (
+                <button
+                  key={chave}
+                  type="button"
+                  onClick={() => set('situacao_financeira', form.situacao_financeira === chave ? '' : chave)}
+                  className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                    form.situacao_financeira === chave
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : 'border-ink-200 bg-white text-ink-700 hover:border-brand-300'
+                  }`}
+                >
+                  {SITUACOES_FINANCEIRAS[chave]}
+                </button>
+              ))}
+            </div>
+          </Field>
         </section>
+
+        {olx.conexao && tenantId && abertura > 0 && (
+          <OlxSecao
+            key={abertura}
+            tenantId={tenantId}
+            carId={car?.id ?? null}
+            conexao={olx.conexao}
+            anuncio={car ? (olx.anuncios[car.id] ?? null) : null}
+            carro={form}
+            valor={olxCampos}
+            onChange={setOlxCampos}
+          />
+        )}
 
         <section>
           <h3 className="mb-1 text-sm font-bold text-ink-900">Histórico veicular deste carro</h3>
