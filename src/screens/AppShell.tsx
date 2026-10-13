@@ -6,7 +6,7 @@ import { useTenant } from '../core/tenant'
 import { isDemo } from '../demo/demo'
 import { Logo } from '../ui/Logo'
 import { Spinner } from '../ui/Button'
-import { CarIcon, ChartIcon, KeyIcon, LockIcon, LogoutIcon, MenuIcon, ReportIcon, SettingsIcon } from '../ui/icons'
+import { CarIcon, ChartIcon, KeyIcon, LockIcon, LogoutIcon, MenuIcon, PlugIcon, ReportIcon, SettingsIcon } from '../ui/icons'
 
 interface NavItem {
   to: string
@@ -14,12 +14,13 @@ interface NavItem {
   icon: ReactNode
 }
 
-/** Ordem fixa do menu: Estoque, Carros oferecidos, Visão Geral, Relatórios e Implementação por último. */
+/** Ordem fixa do menu: Estoque, Carros oferecidos, Visão Geral, Relatórios, Integrações e Implementação por último. */
 const NAV: NavItem[] = [
   { to: '/estoque', label: 'Estoque de Veículos', icon: <CarIcon /> },
   { to: '/carros-oferecidos', label: 'Carros oferecidos', icon: <KeyIcon /> },
   { to: '/visao-geral', label: 'Visão Geral', icon: <ChartIcon /> },
   { to: '/relatorios', label: 'Relatórios', icon: <ReportIcon /> },
+  { to: '/integracoes', label: 'Integrações', icon: <PlugIcon /> },
   { to: '/implementacao', label: 'Implementação', icon: <SettingsIcon /> },
 ]
 
