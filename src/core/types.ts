@@ -243,6 +243,23 @@ export interface Car {
   laudo_obs?: string | null
   laudo_pdf_path?: string | null
   laudo_pdf_url?: string | null
+  /** Placa (maiúscula, sem traço). Exigida pela OLX; não aparece no anúncio nem para a Júlia. */
+  placa?: string | null
+  situacao_financeira?: 'quitado' | 'financiado' | null
+  chave_reserva?: boolean | null
+  manual_proprietario?: boolean | null
+  blindado?: boolean | null
+  de_leilao?: boolean | null
+  com_multas?: boolean | null
+  /** Marca, modelo e versão no catálogo da OLX (código + nome), ao lado do texto da loja. */
+  olx_marca_id?: number | null
+  olx_modelo_id?: number | null
+  olx_versao_id?: number | null
+  olx_marca?: string | null
+  olx_modelo?: string | null
+  olx_versao?: string | null
+  /** false quando a loja tirou este carro da OLX. */
+  olx_publicar?: boolean | null
 }
 
 /** O cliente pediu para segurar o carro pelo WhatsApp e o pedido ainda vale (o carro continua à venda). */

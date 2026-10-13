@@ -196,3 +196,67 @@ export function lerLaudo(input: { tenant_id: string; pdf_url: string }) {
     body: JSON.stringify(input),
   })
 }
+
+// --- OLX --------------------------------------------------------------------
+
+export interface OlxItem {
+  id: number
+  nome: string
+  certeza?: 'alta' | 'conferir'
+}
+
+export interface OlxSugestao {
+  marca: OlxItem | null
+  modelo: OlxItem | null
+  versao: OlxItem | null
+  marcas: OlxItem[]
+  modelos: OlxItem[]
+  versoes: OlxItem[]
+}
+
+export function olxAuthUrl(tenantId: string) {
+  return request<{ url: string }>(`/olx/auth-url?tenant_id=${encodeURIComponent(tenantId)}`)
+}
+
+export function olxDesconectar(tenantId: string) {
+  return request<{ ok: true }>('/olx/desconectar', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId }) })
+}
+
+export function olxConfigurar(tenantId: string, patch: { telefone_anuncio?: string; publicar_tudo?: boolean }) {
+  return request<{ ok: true; telefone_anuncio: string | null; publicar_tudo: boolean }>('/olx/configurar', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId, ...patch }),
+  })
+}
+
+export function olxSugerir(
+  tenantId: string,
+  carro: { brand: string; model: string; version: string; engine: string; transmission: string },
+) {
+  return request<OlxSugestao>('/olx/sugerir', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId, ...carro }) })
+}
+
+export function olxCatalogo(tenantId: string, marca?: number | null, modelo?: number | null) {
+  const qs = new URLSearchParams({ tenant_id: tenantId })
+  if (marca) qs.set('marca', String(marca))
+  if (marca && modelo) qs.set('modelo', String(modelo))
+  return request<{ itens: OlxItem[] }>(`/olx/catalogo?${qs.toString()}`)
+}
+
+export function olxSincronizar(tenantId: string, carId: string, forcar = false) {
+  return request<{ situacao: string; mensagem?: string | null; faltando?: string[] }>('/olx/sincronizar', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId, car_id: carId, forcar }),
+  })
+}
+
+export function olxPublicarTudo(tenantId: string) {
+  return request<{ enviados: number; incompletos: number; iguais: number; comErro: number; aviso: string | null }>(
+    '/olx/publicar-tudo',
+    { method: 'POST', body: JSON.stringify({ tenant_id: tenantId }) },
+  )
+}
+
+export function olxAtualizar(tenantId: string) {
+  return request<{ atualizados: number }>('/olx/atualizar', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId }) })
+}
