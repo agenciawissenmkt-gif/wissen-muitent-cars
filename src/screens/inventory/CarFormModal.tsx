@@ -118,17 +118,17 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     laudoPdf.kind === 'new'
       ? { nome: laudoPdf.file.name, url: null as string | null }
       : laudoPdf.kind === 'keep' && car?.laudo_pdf_url
-        ? { nome: 'PDF do laudo', url: car.laudo_pdf_url }
+        ? { nome: 'PDF do histórico', url: car.laudo_pdf_url }
         : null
 
   function escolheLaudo(file: File | undefined) {
     if (!file) return
     if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      setError('O laudo precisa ser um arquivo PDF.')
+      setError('O histórico veicular precisa ser um arquivo PDF.')
       return
     }
     if (file.size > LAUDO_MAX_BYTES) {
-      setError('O PDF do laudo passa de 10 MB. Gere um arquivo menor e tente de novo.')
+      setError('O PDF do histórico veicular passa de 10 MB. Gere um arquivo menor e tente de novo.')
       return
     }
     setError(null)
@@ -400,16 +400,16 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         </section>
 
         <section>
-          <h3 className="mb-1 text-sm font-bold text-ink-900">Laudo cautelar deste carro</h3>
+          <h3 className="mb-1 text-sm font-bold text-ink-900">Histórico veicular deste carro</h3>
           <p className="mb-3 text-xs text-ink-500">
-            A Júlia fala do laudo deste carro e envia o PDF quando o cliente pedir. Sem laudo aqui, ela usa a regra
+            A Júlia fala do histórico veicular deste carro e envia o PDF quando o cliente pedir. Sem histórico aqui, ela usa a regra
             geral da loja. Ao enviar o PDF, a IA lê o documento e preenche os campos vazios para você conferir.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <Select
               label="Resultado"
               options={LAUDO_RESULTADOS.map((resultado) => LAUDO_RESULTADO_LABEL[resultado])}
-              placeholder="Sem laudo cadastrado"
+              placeholder="Sem histórico cadastrado"
               value={
                 (LAUDO_RESULTADOS as string[]).includes(form.laudo_resultado)
                   ? LAUDO_RESULTADO_LABEL[form.laudo_resultado as LaudoResultado]
@@ -420,13 +420,13 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
               }
             />
             <Input
-              label="Empresa do laudo"
+              label="Empresa do histórico"
               value={form.laudo_empresa}
               onChange={(e) => set('laudo_empresa', e.target.value)}
               placeholder="Dekra, Supervisão, Tüv..."
             />
-            <Input label="Data do laudo" type="date" value={form.laudo_data} onChange={(e) => set('laudo_data', e.target.value)} />
-            <Field label="PDF do laudo">
+            <Input label="Data do histórico" type="date" value={form.laudo_data} onChange={(e) => set('laudo_data', e.target.value)} />
+            <Field label="PDF do histórico veicular">
               <div className="flex flex-wrap items-center gap-2">
                 {pdfAtual ? (
                   pdfAtual.url ? (
@@ -482,7 +482,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                       : 'bg-emerald-50 text-emerald-800'
                 }`}
               >
-                {lendoLaudo ? 'Lendo o PDF do laudo para preencher os campos...' : avisoLaudo?.texto}
+                {lendoLaudo ? 'Lendo o PDF do histórico veicular para preencher os campos...' : avisoLaudo?.texto}
               </p>
             )}
             <div className="sm:col-span-2">
@@ -491,7 +491,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                 value={form.laudo_obs}
                 onChange={(e) => set('laudo_obs', e.target.value)}
                 placeholder="Ex.: reparo no para-choque traseiro, sem dano estrutural."
-                hint="O que o laudo apontou. A Júlia fala disso com honestidade e passa os detalhes ao consultor."
+                hint="O que o histórico veicular apontou. A Júlia fala disso com honestidade e passa os detalhes ao consultor."
               />
             </div>
           </div>
