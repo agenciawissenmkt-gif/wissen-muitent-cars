@@ -193,3 +193,11 @@ export const KeyIcon = (p: IconProps) => (
     <path d="M10.85 12.15 19 4M15.5 7.5l2.5 2.5M17.5 5.5 20 8" />
   </svg>
 )
+
+export const PlugIcon = (p: IconProps) => (
+  <svg {...base(p)}>
+    <path d="M9 3.5v4M15 3.5v4" />
+    <path d="M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0v-3Z" />
+    <path d="M12 16v4.5" />
+  </svg>
+)
