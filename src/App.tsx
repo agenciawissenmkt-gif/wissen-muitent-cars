@@ -12,6 +12,7 @@ import { Overview } from './screens/Overview'
 import { Implementation } from './screens/Implementation'
 import { Reports } from './screens/Reports'
 import { Offers } from './screens/Offers'
+import { Integrations } from './screens/Integrations'
 import { DemoEntrada } from './demo/DemoEntrada'
 
 function SetupNotice() {
@@ -56,6 +57,7 @@ function Gate() {
           <Route path="/carros-oferecidos" element={<Offers />} />
           <Route path="/visao-geral" element={<Overview />} />
           <Route path="/relatorios" element={<Reports />} />
+          <Route path="/integracoes" element={<Integrations />} />
           <Route path="/implementacao" element={<Implementation />} />
           <Route path="*" element={<Navigate to="/estoque" replace />} />
         </Route>
