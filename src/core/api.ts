@@ -260,3 +260,100 @@ export function olxPublicarTudo(tenantId: string) {
 export function olxAtualizar(tenantId: string) {
   return request<{ atualizados: number }>('/olx/atualizar', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId }) })
 }
+
+// --- Webmotors ----------------------------------------------------------------
+
+export interface WebmotorsItem {
+  id: number
+  nome: string
+  certeza?: 'alta' | 'conferir'
+}
+
+export interface WebmotorsModalidade {
+  id: number
+  nome: string
+  tipo: string | null
+  total: number
+  usados: number
+  permiteFoto: boolean
+}
+
+export interface WebmotorsSugestao {
+  marca: WebmotorsItem | null
+  modelo: WebmotorsItem | null
+  versao: WebmotorsItem | null
+  marcas: WebmotorsItem[]
+  modelos: WebmotorsItem[]
+  versoes: WebmotorsItem[]
+}
+
+export function webmotorsStatus(tenantId: string) {
+  return request<{ configurada: boolean; ambiente: 'homologacao' | 'producao' | null }>(
+    `/webmotors/status?tenant_id=${encodeURIComponent(tenantId)}`,
+  )
+}
+
+export function webmotorsConectar(tenantId: string, login: { cnpj: string; email: string; senha: string }) {
+  return request<{ ok: true; modalidades: WebmotorsModalidade[] }>('/webmotors/conectar', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId, ...login }),
+  })
+}
+
+export function webmotorsDesconectar(tenantId: string) {
+  return request<{ ok: true }>('/webmotors/desconectar', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId }) })
+}
+
+export function webmotorsModalidades(tenantId: string) {
+  return request<{ itens: WebmotorsModalidade[] }>(`/webmotors/modalidades?tenant_id=${encodeURIComponent(tenantId)}`)
+}
+
+export function webmotorsConfigurar(tenantId: string, patch: { modalidade_cod?: number; publicar_tudo?: boolean }) {
+  return request<{ ok: true; modalidade_cod: number | null; modalidade_nome: string | null; publicar_tudo: boolean }>(
+    '/webmotors/configurar',
+    { method: 'POST', body: JSON.stringify({ tenant_id: tenantId, ...patch }) },
+  )
+}
+
+export function webmotorsSugerir(
+  tenantId: string,
+  carro: { brand: string; model: string; version: string; engine: string; transmission: string; model_year: string },
+) {
+  return request<WebmotorsSugestao>('/webmotors/sugerir', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId, ...carro }),
+  })
+}
+
+export function webmotorsCatalogo(tenantId: string, marca?: number | null, modelo?: number | null, ano?: string | null) {
+  const qs = new URLSearchParams({ tenant_id: tenantId })
+  if (marca) qs.set('marca', String(marca))
+  if (marca && modelo) qs.set('modelo', String(modelo))
+  if (marca && modelo && ano) qs.set('ano', ano)
+  return request<{ itens: WebmotorsItem[] }>(`/webmotors/catalogo?${qs.toString()}`)
+}
+
+export function webmotorsSincronizar(tenantId: string, carId: string, forcar = false) {
+  return request<{ situacao: string; mensagem?: string | null; faltando?: string[] }>('/webmotors/sincronizar', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId, car_id: carId, forcar }),
+  })
+}
+
+export function webmotorsPublicarTudo(tenantId: string) {
+  return request<{
+    publicados: number
+    incompletos: number
+    comErro: number
+    emAndamento: number
+    restantes: number
+    aviso: string | null
+  }>('/webmotors/publicar-tudo', { method: 'POST', body: JSON.stringify({ tenant_id: tenantId }) })
+}
+
+export function webmotorsAtualizar(tenantId: string) {
+  return request<{ atualizados: number }>('/webmotors/atualizar', {
+    method: 'POST',
+    body: JSON.stringify({ tenant_id: tenantId }),
+  })
+}

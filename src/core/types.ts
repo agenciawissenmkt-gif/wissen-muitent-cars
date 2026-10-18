@@ -260,6 +260,16 @@ export interface Car {
   olx_versao?: string | null
   /** false quando a loja tirou este carro da OLX. */
   olx_publicar?: boolean | null
+  /** Webmotors (migracao 0058): codigos do catalogo dela e campos que so ela pede. */
+  wm_marca_cod?: number | null
+  wm_modelo_cod?: number | null
+  wm_versao_cod?: number | null
+  wm_marca?: string | null
+  wm_modelo?: string | null
+  wm_versao?: string | null
+  wm_publicar?: boolean | null
+  wm_garantia_fabrica?: boolean | null
+  wm_adaptado_pcd?: boolean | null
 }
 
 /** O cliente pediu para segurar o carro pelo WhatsApp e o pedido ainda vale (o carro continua à venda). */
