@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { CAR_LAUDOS_BUCKET, CAR_PHOTOS_BUCKET, supabase } from '../../core/supabase'
 import type { Car, LaudoResultado } from '../../core/types'
 import { olxDepoisDeMudar } from '../../core/olx'
+import { webmotorsDepoisDeMudar } from '../../core/webmotors'
 
 /** Campos editáveis pelo painel — espelham as colunas de `cars`. */
 export interface CarDraft {
@@ -63,6 +64,15 @@ export interface CarDraft {
   olx_modelo?: string | null
   olx_versao?: string | null
   olx_publicar?: boolean
+  wm_marca_cod?: number | null
+  wm_modelo_cod?: number | null
+  wm_versao_cod?: number | null
+  wm_marca?: string | null
+  wm_modelo?: string | null
+  wm_versao?: string | null
+  wm_publicar?: boolean
+  wm_garantia_fabrica?: boolean
+  wm_adaptado_pcd?: boolean
 }
 
 /** O que fazer com o PDF do laudo ao salvar: manter o atual, subir um novo ou tirar. */
@@ -269,6 +279,7 @@ export function useCars({ tenantId, storeId }: Options) {
       await refresh()
       // OLX: so faz algo se a loja conectou (em Integracoes). Em segundo plano.
       olxDepoisDeMudar(tenantId, id)
+      webmotorsDepoisDeMudar(tenantId, id)
       return id
     },
     [tenantId, storeId, refresh],
@@ -287,6 +298,7 @@ export function useCars({ tenantId, storeId }: Options) {
       if (paths.length) await supabase.storage.from(CAR_PHOTOS_BUCKET).remove(paths)
       if (car.laudo_pdf_path) await supabase.storage.from(CAR_LAUDOS_BUCKET).remove([car.laudo_pdf_path])
       olxDepoisDeMudar(car.tenant_id, car.id)
+      webmotorsDepoisDeMudar(car.tenant_id, car.id)
       await refresh()
     },
     [refresh],
@@ -305,6 +317,7 @@ export function useCars({ tenantId, storeId }: Options) {
       await supabase.from('car_photos').delete().eq('car_id', car.id)
       if (paths.length) await supabase.storage.from(CAR_PHOTOS_BUCKET).remove(paths)
       olxDepoisDeMudar(car.tenant_id, car.id)
+      webmotorsDepoisDeMudar(car.tenant_id, car.id)
       await refresh()
     },
     [refresh],
@@ -328,6 +341,7 @@ export function useCars({ tenantId, storeId }: Options) {
       )
       // Sinal recebido tira da OLX; voltar para Disponivel publica de novo.
       olxDepoisDeMudar(car.tenant_id, car.id)
+      webmotorsDepoisDeMudar(car.tenant_id, car.id)
       return next
     },
     [],

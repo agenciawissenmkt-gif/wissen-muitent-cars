@@ -26,6 +26,9 @@ import { BotaoFichaIA } from './BotaoFichaIA'
 import { useOlx } from '../../core/olx'
 import { olxAtualizar } from '../../core/api'
 import { OLX_VAZIO, OlxSecao, type OlxCampos } from './OlxSecao'
+import { useWebmotors } from '../../core/webmotors'
+import { webmotorsAtualizar } from '../../core/api'
+import { WEBMOTORS_VAZIO, WebmotorsSecao, type WebmotorsCampos } from './WebmotorsSecao'
 
 interface Props {
   open: boolean
@@ -101,6 +104,11 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const [abertura, setAbertura] = useState(0)
   const recarregarOlx = olx.recarregar
   const olxConectada = Boolean(olx.conexao)
+  // Webmotors: mesmo esquema. Sem a loja conectada, nada disso aparece nem grava.
+  const webmotors = useWebmotors(tenantId)
+  const [wmCampos, setWmCampos] = useState<WebmotorsCampos>(WEBMOTORS_VAZIO)
+  const recarregarWebmotors = webmotors.recarregar
+  const webmotorsConectada = Boolean(webmotors.conexao)
 
   useEffect(() => {
     if (!open || !tenantId) return
@@ -115,6 +123,20 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       }
     })
   }, [open, tenantId, recarregarOlx])
+
+  useEffect(() => {
+    if (!open || !tenantId) return
+    // Termina em segundo plano fotos que ficaram pela metade na Webmotors.
+    void recarregarWebmotors().then(async (conexao) => {
+      if (!conexao) return
+      try {
+        const { atualizados } = await webmotorsAtualizar(tenantId)
+        if (atualizados) await recarregarWebmotors()
+      } catch {
+        // Sem Webmotors conectada ou fora do ar: o cadastro segue normal.
+      }
+    })
+  }, [open, tenantId, recarregarWebmotors])
 
   useEffect(() => {
     if (!open) return
@@ -144,6 +166,17 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         olx_versao: car.olx_versao ?? null,
         olx_publicar: car.olx_publicar !== false,
       })
+      setWmCampos({
+        wm_marca_cod: car.wm_marca_cod ?? null,
+        wm_marca: car.wm_marca ?? null,
+        wm_modelo_cod: car.wm_modelo_cod ?? null,
+        wm_modelo: car.wm_modelo ?? null,
+        wm_versao_cod: car.wm_versao_cod ?? null,
+        wm_versao: car.wm_versao ?? null,
+        wm_publicar: car.wm_publicar !== false,
+        wm_garantia_fabrica: Boolean(car.wm_garantia_fabrica),
+        wm_adaptado_pcd: Boolean(car.wm_adaptado_pcd),
+      })
       setPhotos(
         car.car_photos.map((photo) => ({
           kind: 'existing' as const,
@@ -156,6 +189,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       setForm({ ...EMPTY_TEXT, doors: '4', status: 'ativo' } as FormState)
       setFlags({ accepts_trade: true })
       setOlxCampos(OLX_VAZIO)
+      setWmCampos(WEBMOTORS_VAZIO)
       setPhotos([])
     }
   }, [open, car])
@@ -323,6 +357,8 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       com_multas: flag('com_multas'),
       // Sem OLX conectada estes campos nem vão no salvamento.
       ...(olxConectada ? olxCampos : {}),
+      // Idem para a Webmotors: sem conexão, as colunas wm_* nem entram no salvamento.
+      ...(webmotorsConectada ? wmCampos : {}),
     }
 
     try {
@@ -501,6 +537,19 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
             carro={form}
             valor={olxCampos}
             onChange={setOlxCampos}
+          />
+        )}
+
+        {webmotors.conexao && tenantId && abertura > 0 && (
+          <WebmotorsSecao
+            key={`wm-${abertura}`}
+            tenantId={tenantId}
+            carId={car?.id ?? null}
+            conexao={webmotors.conexao}
+            anuncio={car ? (webmotors.anuncios[car.id] ?? null) : null}
+            carro={form}
+            valor={wmCampos}
+            onChange={setWmCampos}
           />
         )}
 
