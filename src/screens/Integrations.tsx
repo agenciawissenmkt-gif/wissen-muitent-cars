@@ -9,9 +9,10 @@ import { useToast } from '../ui/Feedback'
 import { Input, Toggle } from '../ui/Field'
 import { CheckIcon, PlugIcon } from '../ui/icons'
 import { InfoNote } from './implementation/StepCard'
+import { WebmotorsIntegracao } from './WebmotorsIntegracao'
 
 /**
- * Integracoes do estoque com sites de anuncio (OLX hoje; outros depois).
+ * Integracoes do estoque com sites de anuncio (OLX e Webmotors; outros depois).
  * Separado da Implementacao e da Visao Geral: aqui e so anuncio, nada da Julia.
  */
 
@@ -308,13 +309,15 @@ export function Integrations() {
         )}
       </motion.section>
 
+      <WebmotorsIntegracao tenantId={tenantId} cnpjDaLoja={store?.cnpj ?? null} />
+
       <section className="mt-6 flex items-center gap-4 rounded-3xl border border-dashed border-ink-200 p-5 text-ink-400">
         <span className="grid size-12 place-items-center rounded-2xl bg-ink-100">
           <PlugIcon />
         </span>
         <div>
           <p className="text-sm font-semibold text-ink-600">Outros sites de anúncio</p>
-          <p className="text-xs">Webmotors e outros portais entram aqui em breve.</p>
+          <p className="text-xs">Outros portais entram aqui em breve.</p>
         </div>
       </section>
     </div>
