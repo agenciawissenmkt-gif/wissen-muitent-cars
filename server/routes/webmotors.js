@@ -111,11 +111,9 @@ async function sincronizarCarro({ tenantId, conexao, carId, forcar = false, inic
   ])
 
   const jaNaWebmotors = Boolean(registro?.codigo_anuncio && NA_WEBMOTORS.includes(registro.situacao))
-  const deveEstar =
-    Boolean(car) &&
-    car.status === 'ativo' &&
-    car.wm_publicar !== false &&
-    (conexao.publicar_tudo || forcar || jaNaWebmotors)
+  // Quem decide e a escolha feita ao salvar o carro (wm_publicar). `forcar` fica so por compatibilidade.
+  void forcar
+  const deveEstar = Boolean(car) && car.status === 'ativo' && car.wm_publicar !== false
 
   if (!deveEstar) {
     if (!registro) return { situacao: 'fora' }
@@ -135,6 +133,27 @@ async function sincronizarCarro({ tenantId, conexao, carId, forcar = false, inic
       ...(r.ok ? { codigo_anuncio: null, conteudo_hash: null, fotos: [] } : {}),
     })
     return { situacao: r.ok ? 'removido' : 'erro', mensagem: r.mensagem }
+  }
+
+  // Marca/modelo/versao da Webmotors ainda nao escolhidos (ajustes por plataforma fechados): o painel acha sozinho.
+  if (!car.wm_marca_cod || !car.wm_modelo_cod || !car.wm_versao_cod) {
+    try {
+      const s = await sugerirCatalogo(conexao, car)
+      if (s.marca && s.modelo && s.versao && s.versao.certeza === 'alta') {
+        const codigos = {
+          wm_marca_cod: s.marca.id,
+          wm_marca: s.marca.nome,
+          wm_modelo_cod: s.modelo.id,
+          wm_modelo: s.modelo.nome,
+          wm_versao_cod: s.versao.id,
+          wm_versao: s.versao.nome,
+        }
+        await db.update('cars', `id=eq.${carId}&tenant_id=eq.${tenantId}`, codigos)
+        Object.assign(car, codigos)
+      }
+    } catch {
+      // Catalogo fora do ar: segue e o anuncio fica como "falta informacao".
+    }
   }
 
   const codigoAtual = jaNaWebmotors ? registro.codigo_anuncio : 0
