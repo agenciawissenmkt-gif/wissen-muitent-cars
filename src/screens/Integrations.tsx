@@ -6,7 +6,7 @@ import { ApiError, olxAtualizar, olxAuthUrl, olxConfigurar, olxDesconectar, olxP
 import { OLX_SITUACAO, esquecerConexaoOlx, useOlx, type OlxSituacao } from '../core/olx'
 import { Button } from '../ui/Button'
 import { useToast } from '../ui/Feedback'
-import { Input, Toggle } from '../ui/Field'
+import { Input } from '../ui/Field'
 import { CheckIcon, PlugIcon } from '../ui/icons'
 import { InfoNote } from './implementation/StepCard'
 import { WebmotorsIntegracao } from './WebmotorsIntegracao'
@@ -125,17 +125,6 @@ export function Integrations() {
     }
   }
 
-  async function alternarAutomatico(valor: boolean) {
-    if (!tenantId) return
-    try {
-      await olxConfigurar(tenantId, { publicar_tudo: valor })
-      esquecerConexaoOlx(tenantId)
-      await recarregar()
-    } catch (err) {
-      setErro({ message: err instanceof Error ? err.message : 'Não foi possível salvar.' })
-    }
-  }
-
   async function publicarTudo() {
     if (!tenantId) return
     setPublicando(true)
@@ -246,18 +235,16 @@ export function Integrations() {
               <InfoNote tone="red">Cadastre o telefone do anúncio para começar a publicar.</InfoNote>
             )}
 
-            <Toggle
-              checked={conexao.publicar_tudo}
-              onChange={(v) => void alternarAutomatico(v)}
-              label="Publicar tudo automaticamente"
-              description="Todo carro disponível vai para a OLX ao salvar, e sai dela quando recebe sinal, é vendido ou excluído. Desligado, você publica com o botão abaixo ou pelo cadastro de cada carro."
-            />
+            <InfoNote>
+              Você escolhe em quais sites cada carro aparece na hora de salvar o cadastro. Carro com sinal recebido, vendido ou
+              excluído sai da OLX sozinho, e volta quando fica disponível de novo.
+            </InfoNote>
 
             <div className="flex flex-col gap-4 rounded-2xl border border-ink-200 bg-ink-50/60 p-4 sm:flex-row sm:items-center">
               <div className="flex-1">
                 <p className="text-sm font-semibold text-ink-900">Publicar o estoque agora</p>
                 <p className="text-xs text-ink-500">
-                  Manda de uma vez todos os carros disponíveis liberados para a OLX. Os que já estão em dia não são enviados de novo.
+                  Manda de uma vez todos os carros disponíveis marcados para a OLX. Os que já estão em dia não são enviados de novo.
                 </p>
               </div>
               <Button onClick={() => void publicarTudo()} loading={publicando} disabled={!conexao.telefone_anuncio}>

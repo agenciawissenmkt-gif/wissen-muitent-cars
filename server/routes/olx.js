@@ -96,8 +96,9 @@ async function sincronizarCarro({ tenantId, conexao, store, carId, forcar = fals
   ])
 
   const jaNaOlx = Boolean(registro && NA_OLX.includes(registro.situacao))
-  const deveEstar =
-    Boolean(car) && car.status === 'ativo' && car.olx_publicar !== false && (conexao.publicar_tudo || forcar || jaNaOlx)
+  // Quem decide e a escolha feita ao salvar o carro (olx_publicar). `forcar` fica so por compatibilidade.
+  void forcar
+  const deveEstar = Boolean(car) && car.status === 'ativo' && car.olx_publicar !== false
 
   if (!deveEstar) {
     if (!registro) return { situacao: 'fora' }
@@ -120,6 +121,27 @@ async function sincronizarCarro({ tenantId, conexao, store, carId, forcar = fals
       conteudo_hash: null,
     })
     return { situacao: envio.ok ? 'removendo' : 'erro', mensagem: envio.mensagem }
+  }
+
+  // Marca/modelo/versao da OLX ainda nao escolhidos (ajustes por plataforma fechados): o painel acha sozinho.
+  if (!car.olx_marca_id || !car.olx_modelo_id || !car.olx_versao_id) {
+    try {
+      const s = await sugerirCatalogo(conexao.access_token, car)
+      if (s.marca && s.modelo && s.versao && s.versao.certeza === 'alta') {
+        const codigos = {
+          olx_marca_id: s.marca.id,
+          olx_marca: s.marca.nome,
+          olx_modelo_id: s.modelo.id,
+          olx_modelo: s.modelo.nome,
+          olx_versao_id: s.versao.id,
+          olx_versao: s.versao.nome,
+        }
+        await db.update('cars', `id=eq.${carId}&tenant_id=eq.${tenantId}`, codigos)
+        Object.assign(car, codigos)
+      }
+    } catch {
+      // Catalogo fora do ar: segue e o anuncio fica como "falta informacao".
+    }
   }
 
   const fotos = await db.select('car_photos', `car_id=eq.${carId}&select=url,ordem,is_cover&order=is_cover.desc,ordem.asc`)

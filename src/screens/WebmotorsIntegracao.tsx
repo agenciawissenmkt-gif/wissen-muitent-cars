@@ -20,7 +20,7 @@ import {
 } from '../core/webmotors'
 import { Button } from '../ui/Button'
 import { useToast } from '../ui/Feedback'
-import { Input, Select, Toggle } from '../ui/Field'
+import { Input, Select } from '../ui/Field'
 import { CheckIcon } from '../ui/icons'
 import { InfoNote } from './implementation/StepCard'
 
@@ -136,7 +136,7 @@ export function WebmotorsIntegracao({ tenantId, cnpjDaLoja }: { tenantId: string
     }
   }
 
-  async function configurar(patch: { modalidade_cod?: number; publicar_tudo?: boolean }) {
+  async function configurar(patch: { modalidade_cod?: number }) {
     if (!tenantId) return
     setErro(null)
     try {
@@ -296,18 +296,16 @@ export function WebmotorsIntegracao({ tenantId, cnpjDaLoja }: { tenantId: string
             <InfoNote tone="red">Escolha o plano dos anúncios para começar a publicar.</InfoNote>
           )}
 
-          <Toggle
-            checked={conexao.publicar_tudo}
-            onChange={(v) => void configurar({ publicar_tudo: v })}
-            label="Publicar tudo automaticamente"
-            description="Todo carro disponível vai para a Webmotors ao salvar, e sai dela quando recebe sinal, é vendido ou excluído. Desligado, você publica com o botão abaixo ou pelo cadastro de cada carro."
-          />
+          <InfoNote>
+            Você escolhe em quais sites cada carro aparece na hora de salvar o cadastro. Carro com sinal recebido, vendido ou
+            excluído sai da Webmotors sozinho, e volta quando fica disponível de novo.
+          </InfoNote>
 
           <div className="flex flex-col gap-4 rounded-2xl border border-ink-200 bg-ink-50/60 p-4 sm:flex-row sm:items-center">
             <div className="flex-1">
               <p className="text-sm font-semibold text-ink-900">Publicar o estoque agora</p>
               <p className="text-xs text-ink-500">
-                Manda todos os carros disponíveis liberados para a Webmotors. Os que já estão publicados não são enviados de novo.
+                Manda todos os carros disponíveis marcados para a Webmotors. Os que já estão publicados não são enviados de novo.
               </p>
             </div>
             <Button onClick={() => void publicarTudo()} loading={publicando} disabled={!conexao.modalidade_cod}>
