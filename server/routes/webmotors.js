@@ -65,23 +65,32 @@ async function sincronizarFotos({ conexao, codigoAnuncio, fotosPainel, enviadas,
     if (r.ok) atual = atual.filter((f) => f.id !== foto.id)
   }
 
+  // Erro passageiro numa tentativa anterior (ex.: 42|4) volta para a fila; erro de arquivo (tamanho/formato) fica.
+  atual = atual.filter((f) => f.codigo || f.permanente)
+
   for (const foto of fotosPainel) {
     if (atual.some((f) => f.id === foto.id)) continue
     if (Date.now() - inicio > ORCAMENTO_MS) break
     const arquivo = await baixarFoto(foto.url)
     if (arquivo.erro) {
       aviso = arquivo.erro
-      atual.push({ id: foto.id, codigo: null, erro: arquivo.erro })
+      atual.push({ id: foto.id, codigo: null, erro: arquivo.erro, permanente: true })
       continue
     }
-    const r = await incluirFoto(conexao, codigoAnuncio, arquivo.bytes)
+    let r = await incluirFoto(conexao, codigoAnuncio, arquivo.bytes)
+    // Logo depois de criar o anuncio a Webmotors as vezes ainda nao grava a foto (42|4): espera e tenta de novo.
+    for (let tentativa = 0; !r.ok && String(r.codigo) === '42|4' && tentativa < 2; tentativa++) {
+      await new Promise((ok) => setTimeout(ok, 3000))
+      r = await incluirFoto(conexao, codigoAnuncio, arquivo.bytes)
+    }
     if (r.ok) {
       atual.push({ id: foto.id, codigo: r.codigoFoto })
     } else {
       aviso = r.mensagem
       // Limite de fotos do plano ou plano sem foto: nao adianta insistir nas outras.
       if (['42|2', '42|3'].includes(String(r.codigo))) break
-      atual.push({ id: foto.id, codigo: null, erro: r.mensagem })
+      // Formato/tamanho nao muda sozinho: marca. Outros erros ficam pendentes para a proxima sincronizacao.
+      if (['21|9', '21|10'].includes(String(r.codigo))) atual.push({ id: foto.id, codigo: null, erro: r.mensagem, permanente: true })
     }
   }
 
