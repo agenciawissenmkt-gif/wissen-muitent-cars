@@ -76,7 +76,9 @@ export function decifra(valor) {
 // --- XML ------------------------------------------------------------------------
 
 export function xmlEscapa(valor) {
-  return String(valor ?? '').replace(
+  // Caractere de controle (colado de outro sistema) deixa o XML invalido: sai antes de escapar.
+  // eslint-disable-next-line no-control-regex
+  return String(valor ?? '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '').replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c],
   )
@@ -170,6 +172,36 @@ const RETORNOS = {
   '42|3': 'O plano (modalidade) escolhido na Webmotors não aceita fotos.',
   '42|4': 'A Webmotors não conseguiu gravar a foto.',
   '22|78': 'A Webmotors recusou o preço do anúncio.',
+  '31|1': 'A Webmotors pediu um campo que não foi preenchido.',
+  '43|7': 'Falta o preço do carro.',
+  '43|8': 'Falta o ano do modelo.',
+  '43|9': 'Falta o ano de fabricação.',
+  '43|13': 'Falta a placa (obrigatória para carro usado).',
+  '43|19': 'Falta a placa (obrigatória para carro usado).',
+  '43|33': 'O pacote de anúncios da loja na Webmotors não tem mais anúncios disponíveis.',
+  '43|36': 'A Webmotors não deixa alterar este anúncio agora.',
+  '43|37': 'Ano do modelo inválido para a Webmotors.',
+  '43|39': 'Este anúncio não pertence à conta da loja conectada na Webmotors.',
+  '43|40': 'Anúncio inválido na Webmotors.',
+  '43|41': 'Marca, modelo, versão e ano não batem no catálogo da Webmotors. Confira em "Ajustes por plataforma".',
+  '43|42': 'A cor não é aceita para esta versão na Webmotors.',
+  '43|44': 'Combustível inválido para a Webmotors.',
+  '43|45': 'Câmbio inválido para a Webmotors.',
+  '43|56': 'O plano (modalidade) escolhido não vale para este tipo de anúncio na Webmotors.',
+  '43|62': 'Número de portas inválido para a Webmotors.',
+  '43|63': 'Combustível inválido para a Webmotors.',
+  '43|64': 'Cor inválida para a Webmotors.',
+  '43|65': 'A descrição tem algo que a Webmotors entende como código (por exemplo < ou >). Ajuste a descrição.',
+  '43|66': 'O preço está fora do valor de mercado aceito pela Webmotors (tabelas Webmotors/FIPE).',
+  '43|68': 'Quilometragem não aceita pela Webmotors.',
+  '43|80': 'A conta da loja está bloqueada na Webmotors.',
+  '43|82': 'A Webmotors só deixa alterar o preço deste anúncio.',
+  '43|84': 'Placa inválida para a Webmotors.',
+  '43|85': 'Ano de fabricação inválido para a Webmotors.',
+  '43|97': 'A descrição passou do tamanho aceito pela Webmotors.',
+  '43|102': 'O preço está acima do permitido em relação à tabela FIPE.',
+  '43|107': 'A Webmotors não deixa diminuir a quilometragem de um anúncio já publicado.',
+  '43|112': 'Ano de fabricação inválido para a Webmotors.',
   '28|2': 'Preço de venda inválido para a Webmotors.',
   '43|32': 'O plano da loja na Webmotors não tem mais anúncios disponíveis.',
 }
@@ -505,7 +537,8 @@ export async function montarAnuncio({ car, conexao, codigoAnuncio = 0 }) {
   if (!cambio) faltando.push('câmbio (como a Webmotors chama)')
   if (faltando.length) return { faltando }
 
-  const observacao = String(car.description ?? '').replace(/\s+/g, ' ').trim().slice(0, 500)
+  // Sem < e >: a Webmotors recusa como "HTML injection" (43|65). Limite de 500 caracteres do manual.
+  const observacao = String(car.description ?? '').replace(/[<>]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500)
   const lista = opcionaisDoCarro(car, listaOpcionais)
 
   const xml = elementos([
