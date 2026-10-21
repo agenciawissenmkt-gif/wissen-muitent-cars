@@ -169,6 +169,9 @@ const RETORNOS = {
   '42|2': 'Limite de fotos do plano da Webmotors atingido.',
   '42|3': 'O plano (modalidade) escolhido na Webmotors não aceita fotos.',
   '42|4': 'A Webmotors não conseguiu gravar a foto.',
+  '22|78': 'A Webmotors recusou o preço do anúncio.',
+  '28|2': 'Preço de venda inválido para a Webmotors.',
+  '43|32': 'O plano da loja na Webmotors não tem mais anúncios disponíveis.',
 }
 
 export function explicaRetorno(codigo) {
@@ -381,19 +384,54 @@ export async function sugerirCatalogo(conexao, { brand, model, version, engine, 
 
 // --- Do cadastro do carro para o anuncio da Webmotors -------------------------------
 
-/** Item da tabela da Webmotors que corresponde ao texto da loja (cor, cambio...). */
-function daTabela(lista, texto, sinonimos = {}) {
-  const t = normaliza(texto)
-  if (!t || !lista?.length) return null
-  const alvo = Object.entries(sinonimos).find(([inicio]) => t.startsWith(inicio))?.[1] ?? t
-  const exato = lista.find((i) => normaliza(i.nome) === alvo)
-  if (exato) return exato
-  return lista.find((i) => normaliza(i.nome).startsWith(alvo) || alvo.startsWith(normaliza(i.nome))) ?? melhor(lista, alvo)
+/** Nome da tabela da Webmotors sem acento e sem o/a final (automatico = automatica). */
+const raiz = (texto) => normaliza(texto).replace(/[oa]\b/g, '')
+
+/** Primeiro item da tabela cujo nome (sem acento/genero) e um dos nomes dados. */
+function pelaRaiz(lista, ...nomes) {
+  const alvos = nomes.map(raiz)
+  return lista?.find((i) => alvos.includes(raiz(i.nome))) ?? null
 }
 
-const SINONIMOS_CAMBIO = { cvt: 'automatico', 'automatico cvt': 'automatico', semi: 'semi automatico' }
-const SINONIMOS_COMBUSTIVEL = { flex: 'gasolina e alcool', alcool: 'alcool', etanol: 'alcool', hibrido: 'hibrido' }
-const SINONIMOS_COR = { grafite: 'cinza', chumbo: 'cinza' }
+/** Cambio do cadastro -> tabela da Webmotors (Manual, Automatica, CVT, Automatizada...). */
+function cambioDaTabela(lista, transmission) {
+  const t = normaliza(transmission)
+  if (!t) return null
+  if (t.startsWith('manual')) return pelaRaiz(lista, 'manual')
+  if (t.includes('cvt')) return pelaRaiz(lista, 'cvt', 'automatica')
+  if (t.startsWith('semi')) return pelaRaiz(lista, 'semi automatica')
+  if (t.startsWith('automatizad')) return t.includes('dct') || t.includes('dupla') ? pelaRaiz(lista, 'automatizada dct', 'automatizada') : pelaRaiz(lista, 'automatizada')
+  if (t.startsWith('automat') || t === 'at') return pelaRaiz(lista, 'automatica')
+  return pelaRaiz(lista, t)
+}
+
+/** Combustivel do cadastro -> tabela (Flex = "Gasolina e alcool"). */
+function combustivelDaTabela(lista, fuel) {
+  const f = normaliza(fuel)
+  if (!f) return null
+  if (f.startsWith('flex')) return pelaRaiz(lista, 'gasolina e alcool')
+  if (f.startsWith('etanol') || f.startsWith('alcool')) return pelaRaiz(lista, 'alcool')
+  if (f.startsWith('gasolina')) return pelaRaiz(lista, 'gasolina')
+  if (f.startsWith('diesel')) return pelaRaiz(lista, 'diesel')
+  if (f.startsWith('hibrido')) return pelaRaiz(lista, 'gasolina e eletrico')
+  if (f.startsWith('eletric')) return pelaRaiz(lista, 'eletrico')
+  if (f.startsWith('gnv') || f.includes('gas natural')) return pelaRaiz(lista, 'gasolina e gas natural')
+  return pelaRaiz(lista, f)
+}
+
+/** Cor do cadastro -> tabela. Sem cor parecida, vai como "Indefinida". */
+function corDaTabela(lista, color) {
+  const c = normaliza(color)
+  if (!c || !lista?.length) return null
+  const primeira = c.split(' ')[0]
+  const sinonimos = { grafite: 'cinza', chumbo: 'cinza', champagne: 'bege', creme: 'bege', bordo: 'vinho', grena: 'vinho' }
+  return (
+    pelaRaiz(lista, sinonimos[primeira] ?? primeira) ??
+    lista.find((i) => c.includes(normaliza(i.nome))) ??
+    lista.find((i) => /^indefinid|^outr/.test(normaliza(i.nome))) ??
+    null
+  )
+}
 
 const temItem = (valor) => {
   const v = normaliza(valor)
@@ -413,7 +451,9 @@ function opcionaisDoCarro(car, lista) {
     temItem(car.carplay_android_auto) && procura('multimidia', 'central multimidia', 'android auto', 'carplay'),
     temItem(car.parking_sensor) && procura('sensor de estacionamento', 'sensor de re', 'sensor de manobra'),
     temItem(car.rear_camera) && procura('camera de re', 'camera traseira'),
-    temItem(car.leather_seats) && procura('bancos de couro', 'banco de couro', 'couro'),
+    temItem(car.leather_seats) && procura('bancos em couro', 'bancos de couro', 'couro'),
+    normaliza(car.steering).startsWith('hidraul') && procura('direcao hidraulica'),
+    normaliza(car.steering).startsWith('eletr') && procura('direcao eletrica', 'direcao hidraulica'),
     temItem(car.sunroof) && procura('teto solar', 'teto panoramico'),
     temItem(car.keyless_entry) && procura('chave presencial', 'partida sem chave', 'keyless'),
     ['4x4', 'awd'].includes(normaliza(car.traction)) && procura('tracao 4x4', '4x4'),
@@ -448,12 +488,9 @@ export async function montarAnuncio({ car, conexao, codigoAnuncio = 0 }) {
     cambios(conexao),
     opcionais(conexao).catch(() => []),
   ])
-  // Cor que a Webmotors nao tem (ex.: "rosa choque"): vai como "Outra", se existir na tabela dela.
-  const cor =
-    daTabela(listaCores, car.color, SINONIMOS_COR) ??
-    (car.color ? listaCores.find((c) => /^outr/.test(normaliza(c.nome))) ?? null : null)
-  const combustivel = daTabela(listaCombustiveis, car.fuel, SINONIMOS_COMBUSTIVEL)
-  const cambio = daTabela(listaCambios, car.transmission, SINONIMOS_CAMBIO)
+  const cor = corDaTabela(listaCores, car.color)
+  const combustivel = combustivelDaTabela(listaCombustiveis, car.fuel)
+  const cambio = cambioDaTabela(listaCambios, car.transmission)
 
   if (!conexao.modalidade_cod) faltando.push('plano (modalidade) da Webmotors em Integrações')
   if (!car.wm_marca_cod || !car.wm_modelo_cod || !car.wm_versao_cod) faltando.push('marca, modelo e versão da Webmotors')
@@ -499,8 +536,8 @@ export async function montarAnuncio({ car, conexao, codigoAnuncio = 0 }) {
     ['GarantiaDeFabrica', sn(car.wm_garantia_fabrica)],
     ['Licenciado', sn(car.licensed)],
     ['Leilao', sn(car.de_leilao)],
-    // PrecoReal e PrecoVenda sao obrigatorios no WSDL; o painel tem um preco so.
-    ['PrecoReal', dinheiro(preco)],
+    // PrecoReal vai 0: com valor, a homologacao recusa (codigo 22|78). O preco do anuncio e o PrecoVenda.
+    ['PrecoReal', '0'],
     ['PrecoVenda', dinheiro(preco)],
     ['Observacao', observacao || null],
     [
