@@ -39,6 +39,8 @@ interface Props {
   carro: Record<string, string>
   valor: OlxCampos
   onChange: (valor: OlxCampos) => void
+  /** Esconde o liga/desliga e o botao de publicar: a escolha de plataformas e feita ao salvar. */
+  semPublicacao?: boolean
 }
 
 const resumo = (carro: Record<string, string>) =>
@@ -51,7 +53,7 @@ const resumo = (carro: Record<string, string>) =>
     ['Direção', carro.steering],
   ].filter(([, v]) => v && v.trim())
 
-export function OlxSecao({ tenantId, carId, conexao, anuncio, carro, valor, onChange }: Props) {
+export function OlxSecao({ tenantId, carId, conexao, anuncio, carro, valor, onChange, semPublicacao = false }: Props) {
   const [marcas, setMarcas] = useState<OlxItem[]>([])
   const [modelos, setModelos] = useState<OlxItem[]>([])
   const [versoes, setVersoes] = useState<OlxItem[]>([])
@@ -267,7 +269,7 @@ export function OlxSecao({ tenantId, carId, conexao, anuncio, carro, valor, onCh
         </div>
       )}
 
-      {carId && (
+      {carId && !semPublicacao && (
         <div className="mt-4">
           <Toggle
             checked={valor.olx_publicar}
@@ -282,7 +284,7 @@ export function OlxSecao({ tenantId, carId, conexao, anuncio, carro, valor, onCh
         </div>
       )}
 
-      {carId && !conexao.publicar_tudo && valor.olx_publicar && (
+      {carId && !semPublicacao && !conexao.publicar_tudo && valor.olx_publicar && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button type="button" variant="secondary" size="sm" loading={publicando} onClick={() => void publicarAgora()}>
             Publicar este carro na OLX agora

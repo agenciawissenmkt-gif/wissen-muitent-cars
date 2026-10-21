@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '../../ui/Button'
-import { CheckPill, Select, Toggle } from '../../ui/Field'
+import { Select, Toggle } from '../../ui/Field'
 import { ApiError, webmotorsCatalogo, webmotorsSincronizar, webmotorsSugerir, type WebmotorsItem } from '../../core/api'
 import { WEBMOTORS_SITUACAO, type WebmotorsAnuncio, type WebmotorsConexao } from '../../core/webmotors'
 
@@ -19,8 +19,6 @@ export interface WebmotorsCampos {
   wm_versao_cod: number | null
   wm_versao: string | null
   wm_publicar: boolean
-  wm_garantia_fabrica: boolean
-  wm_adaptado_pcd: boolean
 }
 
 export const WEBMOTORS_VAZIO: WebmotorsCampos = {
@@ -31,8 +29,6 @@ export const WEBMOTORS_VAZIO: WebmotorsCampos = {
   wm_versao_cod: null,
   wm_versao: null,
   wm_publicar: true,
-  wm_garantia_fabrica: false,
-  wm_adaptado_pcd: false,
 }
 
 interface Props {
@@ -44,9 +40,11 @@ interface Props {
   carro: Record<string, string>
   valor: WebmotorsCampos
   onChange: (valor: WebmotorsCampos) => void
+  /** Esconde o liga/desliga e o botao de publicar: a escolha de plataformas e feita ao salvar. */
+  semPublicacao?: boolean
 }
 
-export function WebmotorsSecao({ tenantId, carId, conexao, anuncio, carro, valor, onChange }: Props) {
+export function WebmotorsSecao({ tenantId, carId, conexao, anuncio, carro, valor, onChange, semPublicacao = false }: Props) {
   const [marcas, setMarcas] = useState<WebmotorsItem[]>([])
   const [modelos, setModelos] = useState<WebmotorsItem[]>([])
   const [versoes, setVersoes] = useState<WebmotorsItem[]>([])
@@ -257,20 +255,12 @@ export function WebmotorsSecao({ tenantId, carId, conexao, anuncio, carro, valor
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <CheckPill checked={valor.wm_garantia_fabrica} onChange={(v) => onChange({ ...valor, wm_garantia_fabrica: v })}>
-          Garantia de fábrica
-        </CheckPill>
-        <CheckPill checked={valor.wm_adaptado_pcd} onChange={(v) => onChange({ ...valor, wm_adaptado_pcd: v })}>
-          Adaptado para PcD
-        </CheckPill>
-      </div>
-      <p className="mt-2 text-xs text-ink-400">
+      <p className="mt-3 text-xs text-ink-400">
         Cor, câmbio, combustível, opcionais e o restante do cadastro vão para a Webmotors do mesmo jeito. As fotos vão como
         arquivo, até 500 KB cada (limite da Webmotors).
       </p>
 
-      {carId && (
+      {carId && !semPublicacao && (
         <div className="mt-4">
           <Toggle
             checked={valor.wm_publicar}
@@ -285,7 +275,7 @@ export function WebmotorsSecao({ tenantId, carId, conexao, anuncio, carro, valor
         </div>
       )}
 
-      {carId && !conexao.publicar_tudo && valor.wm_publicar && (
+      {carId && !semPublicacao && !conexao.publicar_tudo && valor.wm_publicar && (
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button type="button" variant="secondary" size="sm" loading={publicando} onClick={() => void publicarAgora()}>
             Publicar este carro na Webmotors agora

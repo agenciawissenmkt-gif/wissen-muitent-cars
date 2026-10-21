@@ -29,6 +29,7 @@ import { OLX_VAZIO, OlxSecao, type OlxCampos } from './OlxSecao'
 import { useWebmotors } from '../../core/webmotors'
 import { webmotorsAtualizar } from '../../core/api'
 import { WEBMOTORS_VAZIO, WebmotorsSecao, type WebmotorsCampos } from './WebmotorsSecao'
+import { DestinosDialog, type Destinos, type Plataforma } from './DestinosDialog'
 
 interface Props {
   open: boolean
@@ -55,6 +56,7 @@ const TEXT_FIELDS = [
 const BOOL_FIELDS = [
   'ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade',
   'chave_reserva', 'manual_proprietario', 'blindado', 'de_leilao', 'com_multas',
+  'wm_garantia_fabrica', 'wm_adaptado_pcd',
 ] as const
 
 const EMPTY_TEXT = Object.fromEntries(TEXT_FIELDS.map((field) => [field, ''])) as Record<string, string>
@@ -69,6 +71,8 @@ const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
   { key: 'blindado', label: 'Blindado' },
   { key: 'de_leilao', label: 'De leilão' },
   { key: 'com_multas', label: 'Com multas' },
+  { key: 'wm_garantia_fabrica', label: 'Garantia de fábrica' },
+  { key: 'wm_adaptado_pcd', label: 'Adaptado para PcD' },
 ]
 
 const SITUACOES_FINANCEIRAS = { quitado: 'Quitado', financiado: 'Financiado' } as const
@@ -109,6 +113,19 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const [wmCampos, setWmCampos] = useState<WebmotorsCampos>(WEBMOTORS_VAZIO)
   const recarregarWebmotors = webmotors.recarregar
   const webmotorsConectada = Boolean(webmotors.conexao)
+  // Onde anunciar: a loja escolhe ao salvar (so aparece com plataforma conectada).
+  const [escolhendoDestinos, setEscolhendoDestinos] = useState(false)
+  // Ajuste fino de marca/modelo/versao por plataforma: fica fechado; o servidor acha sozinho.
+  const [ajustesAbertos, setAjustesAbertos] = useState(false)
+  const plataformas: Plataforma[] = [
+    ...(olxConectada ? [{ id: 'olx' as const, nome: 'OLX' }] : []),
+    ...(webmotorsConectada ? [{ id: 'webmotors' as const, nome: 'Webmotors' }] : []),
+  ]
+  // Carro novo: todas as conectadas marcadas. Carro existente: como esta hoje.
+  const destinosIniciais: Destinos = {
+    olx: car ? olxCampos.olx_publicar : true,
+    webmotors: car ? wmCampos.wm_publicar : true,
+  }
 
   useEffect(() => {
     if (!open || !tenantId) return
@@ -145,6 +162,8 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     setAvisoLaudo(null)
     setLendoLaudo(false)
     setAbertura((n) => n + 1)
+    setAjustesAbertos(false)
+    setEscolhendoDestinos(false)
     leituraAtual.current++
 
     if (car) {
@@ -174,8 +193,6 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         wm_versao_cod: car.wm_versao_cod ?? null,
         wm_versao: car.wm_versao ?? null,
         wm_publicar: car.wm_publicar !== false,
-        wm_garantia_fabrica: Boolean(car.wm_garantia_fabrica),
-        wm_adaptado_pcd: Boolean(car.wm_adaptado_pcd),
       })
       setPhotos(
         car.car_photos.map((photo) => ({
@@ -286,8 +303,8 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const flag = (key: string) => Boolean(flags[key])
   const setFlag = (key: string, value: boolean) => setFlags((prev) => ({ ...prev, [key]: value }))
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
+  async function handleSubmit(event?: FormEvent, destinos?: Destinos) {
+    event?.preventDefault()
     if (!form.model.trim()) {
       setError('Informe pelo menos o modelo do veículo.')
       return
@@ -295,6 +312,13 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     const placa = limpaPlaca(form.placa ?? '')
     if (!placaOk(placa)) {
       setError('A placa precisa ter 7 caracteres, no formato ABC1234 ou ABC1D23.')
+      return
+    }
+
+    // Com OLX/Webmotors conectada, pergunta antes onde anunciar.
+    if (!destinos && plataformas.length) {
+      setError(null)
+      setEscolhendoDestinos(true)
       return
     }
 
@@ -356,15 +380,19 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       de_leilao: flag('de_leilao'),
       com_multas: flag('com_multas'),
       // Sem OLX conectada estes campos nem vão no salvamento.
-      ...(olxConectada ? olxCampos : {}),
-      // Idem para a Webmotors: sem conexão, as colunas wm_* nem entram no salvamento.
-      ...(webmotorsConectada ? wmCampos : {}),
+      wm_garantia_fabrica: flag('wm_garantia_fabrica'),
+      wm_adaptado_pcd: flag('wm_adaptado_pcd'),
+      ...(olxConectada ? { ...olxCampos, olx_publicar: destinos?.olx ?? olxCampos.olx_publicar } : {}),
+      // Idem para a Webmotors: sem conexão, as colunas de anúncio dela nem entram no salvamento.
+      ...(webmotorsConectada ? { ...wmCampos, wm_publicar: destinos?.webmotors ?? wmCampos.wm_publicar } : {}),
     }
 
     try {
       await onSave(draft, photos, car?.id, laudoPdf)
+      setEscolhendoDestinos(false)
       onClose()
     } catch (err) {
+      setEscolhendoDestinos(false)
       setError(err instanceof Error ? err.message : 'Não foi possível salvar o veículo.')
     } finally {
       setSaving(false)
@@ -527,30 +555,52 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
           </Field>
         </section>
 
-        {olx.conexao && tenantId && abertura > 0 && (
-          <OlxSecao
-            key={abertura}
-            tenantId={tenantId}
-            carId={car?.id ?? null}
-            conexao={olx.conexao}
-            anuncio={car ? (olx.anuncios[car.id] ?? null) : null}
-            carro={form}
-            valor={olxCampos}
-            onChange={setOlxCampos}
-          />
-        )}
-
-        {webmotors.conexao && tenantId && abertura > 0 && (
-          <WebmotorsSecao
-            key={`wm-${abertura}`}
-            tenantId={tenantId}
-            carId={car?.id ?? null}
-            conexao={webmotors.conexao}
-            anuncio={car ? (webmotors.anuncios[car.id] ?? null) : null}
-            carro={form}
-            valor={wmCampos}
-            onChange={setWmCampos}
-          />
+        {plataformas.length > 0 && tenantId && abertura > 0 && (
+          <section className="rounded-3xl border border-ink-200 bg-ink-50/50 p-4">
+            <button
+              type="button"
+              onClick={() => setAjustesAbertos((v) => !v)}
+              className="flex w-full items-center justify-between text-left"
+            >
+              <span>
+                <span className="block text-sm font-bold text-ink-900">Ajustes por plataforma</span>
+                <span className="block text-xs text-ink-500">
+                  Marca, modelo e versão como cada site chama. O painel acha sozinho; abra só se precisar corrigir.
+                </span>
+              </span>
+              <span className="text-xs font-semibold text-brand-700">{ajustesAbertos ? 'Fechar' : 'Abrir'}</span>
+            </button>
+            {ajustesAbertos && (
+              <div className="mt-4 space-y-4">
+                {olx.conexao && (
+                  <OlxSecao
+                    key={abertura}
+                    tenantId={tenantId}
+                    carId={car?.id ?? null}
+                    conexao={olx.conexao}
+                    anuncio={car ? (olx.anuncios[car.id] ?? null) : null}
+                    carro={form}
+                    valor={olxCampos}
+                    onChange={setOlxCampos}
+                    semPublicacao
+                  />
+                )}
+                {webmotors.conexao && (
+                  <WebmotorsSecao
+                    key={`wm-${abertura}`}
+                    tenantId={tenantId}
+                    carId={car?.id ?? null}
+                    conexao={webmotors.conexao}
+                    anuncio={car ? (webmotors.anuncios[car.id] ?? null) : null}
+                    carro={form}
+                    valor={wmCampos}
+                    onChange={setWmCampos}
+                    semPublicacao
+                  />
+                )}
+              </div>
+            )}
+          </section>
         )}
 
         <section>
@@ -685,14 +735,23 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
               className="sm:col-span-2"
               value={form.description}
               onChange={(e) => set('description', e.target.value)}
+              rows={8}
               placeholder="Multimídia, câmera de ré, sensor de estacionamento, bancos em couro..."
-              hint="Quanto mais detalhes, melhor o agente de IA apresenta o veículo."
+              hint="Quanto mais detalhes, melhor o agente de IA apresenta o veículo. Este texto também vai para os sites de anúncio; os apontamentos do histórico veicular ficam só para a IA."
             />
           </div>
         </section>
 
         {error && <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       </form>
+      <DestinosDialog
+        open={escolhendoDestinos}
+        plataformas={plataformas}
+        inicial={destinosIniciais}
+        salvando={saving}
+        onCancelar={() => setEscolhendoDestinos(false)}
+        onConfirmar={(destinos) => void handleSubmit(undefined, destinos)}
+      />
     </Modal>
   )
 }
