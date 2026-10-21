@@ -46,7 +46,27 @@ async function gravaAnuncio(linha) {
   await db.upsert('webmotors_anuncios', [{ ...linha, atualizado_em: new Date().toISOString() }], 'car_id')
 }
 
-const NA_WEBMOTORS = ['publicado', 'enviando_fotos']
+
+/** Marca o carro como "pendente" antes de incluir. Devolve false se outra sincronizacao ja esta incluindo. */
+async function reservaInclusao({ carId, tenantId, registro }) {
+  const agora = new Date().toISOString()
+  if (!registro) {
+    try {
+      await db.insert('webmotors_anuncios', [{ car_id: carId, tenant_id: tenantId, situacao: 'pendente', atualizado_em: agora }])
+      return true
+    } catch {
+      return false // a outra sincronizacao criou a linha primeiro
+    }
+  }
+  // Pendente ha menos de 2 minutos: outra inclusao em andamento.
+  if (registro.situacao === 'pendente' && Date.now() - new Date(registro.atualizado_em).getTime() < 120_000) return false
+  const linhas = await db.update(
+    'webmotors_anuncios',
+    `car_id=eq.${carId}&atualizado_em=eq.${encodeURIComponent(registro.atualizado_em)}`,
+    { situacao: 'pendente', atualizado_em: agora },
+  )
+  return Array.isArray(linhas) && linhas.length > 0
+}
 
 /**
  * Fotos: deixa na Webmotors as mesmas do painel. Envia como arquivo (a
@@ -110,7 +130,9 @@ async function sincronizarCarro({ tenantId, conexao, carId, forcar = false, inic
     db.selectOne('webmotors_anuncios', `car_id=eq.${carId}&tenant_id=eq.${tenantId}&select=*`),
   ])
 
-  const jaNaWebmotors = Boolean(registro?.codigo_anuncio && NA_WEBMOTORS.includes(registro.situacao))
+  // Tem codigo de anuncio = o anuncio existe na Webmotors (mesmo que a ultima tentativa tenha dado erro).
+  // Assim um erro ao tirar ou ao atualizar nunca leva a criar um segundo anuncio do mesmo carro.
+  const jaNaWebmotors = Boolean(registro?.codigo_anuncio) && registro.situacao !== 'removido'
   // Quem decide e a escolha feita ao salvar o carro (wm_publicar). `forcar` fica so por compatibilidade.
   void forcar
   const deveEstar = Boolean(car) && car.status === 'ativo' && car.wm_publicar !== false
@@ -175,6 +197,9 @@ async function sincronizarCarro({ tenantId, conexao, carId, forcar = false, inic
   let fotosEnviadas = jaNaWebmotors && Array.isArray(registro.fotos) ? registro.fotos : []
 
   if (!jaNaWebmotors) {
+    // Trava simples: duas sincronizacoes do mesmo carro ao mesmo tempo (salvar duas vezes, sinal logo depois)
+    // nao podem criar dois anuncios. Quem conseguir marcar "pendente" primeiro envia; a outra desiste.
+    if (!(await reservaInclusao({ carId, tenantId, registro }))) return { situacao: 'pendente' }
     const r = await incluirCarro(conexao, xml)
     if (!r.ok) {
       await gravaAnuncio({ car_id: carId, tenant_id: tenantId, situacao: 'erro', mensagem: r.mensagem, conteudo_hash: null })
