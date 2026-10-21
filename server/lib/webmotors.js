@@ -200,7 +200,8 @@ export async function autenticar({ cnpj, email, senha }) {
   )
   const hash = campo(xml, 'HashAutenticacao')
   const codigo = campo(xml, 'CodigoRetorno')
-  if (!hash) {
+  // Login errado tambem devolve HashAutenticacao (com o texto do erro): so vale com codigo 500.
+  if (!hash || !sucesso(codigo)) {
     throw new HttpError(
       400,
       'A Webmotors não aceitou o login.',
@@ -335,7 +336,7 @@ export async function modalidades(conexao) {
       usados: Number(campo(b, 'QuantidadeAnuncios') ?? 0),
       permiteFoto: campo(b, 'PermiteFoto') !== 'N',
     }))
-    .filter((m) => Number.isFinite(m.id))
+    .filter((m) => Number.isFinite(m.id) && m.id > 0)
 }
 
 // --- Achar no catalogo o que a loja digitou -----------------------------------------
