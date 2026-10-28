@@ -56,6 +56,8 @@ export interface CarDraft {
   blindado: boolean
   de_leilao: boolean
   com_multas: boolean
+  /** Marcado pela loja: o carro tem sinistro. A Júlia confirma ao cliente quando ele pergunta. */
+  sinistro: boolean
   /** Só vão no salvamento quando a loja tem OLX conectada (senão ficam como estão). */
   olx_marca_id?: number | null
   olx_modelo_id?: number | null

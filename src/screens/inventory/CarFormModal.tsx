@@ -55,7 +55,7 @@ const TEXT_FIELDS = [
 
 const BOOL_FIELDS = [
   'ipva_paid', 'licensed', 'single_owner', 'dealer_revisions', 'accepts_trade',
-  'chave_reserva', 'manual_proprietario', 'blindado', 'de_leilao', 'com_multas',
+  'chave_reserva', 'manual_proprietario', 'blindado', 'de_leilao', 'com_multas', 'sinistro',
   'wm_garantia_fabrica', 'wm_adaptado_pcd',
 ] as const
 
@@ -69,13 +69,22 @@ const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
   { key: 'chave_reserva', label: 'Chave reserva' },
   { key: 'manual_proprietario', label: 'Manual do proprietário' },
   { key: 'blindado', label: 'Blindado' },
-  { key: 'de_leilao', label: 'De leilão' },
   { key: 'com_multas', label: 'Com multas' },
   { key: 'wm_garantia_fabrica', label: 'Garantia de fábrica' },
   { key: 'wm_adaptado_pcd', label: 'Adaptado para PcD' },
 ]
 
 const SITUACOES_FINANCEIRAS = { quitado: 'Quitado', financiado: 'Financiado' } as const
+
+/**
+ * Perguntas de sim/não do histórico que a Júlia usa quando o cliente pergunta.
+ * Marcado Sim: ela confirma e convida pra ver o carro na loja com o consultor.
+ * Em Não: ela responde que não tem (ou manda o PDF do histórico, se houver).
+ */
+const HISTORICO_SIM_NAO: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
+  { key: 'sinistro', label: 'Este carro tem sinistro?' },
+  { key: 'de_leilao', label: 'Este carro é de leilão?' },
+]
 
 /** Placa como a OLX valida: ABC1234 ou ABC1D23 (maiúscula, sem traço). */
 const limpaPlaca = (valor: string) => valor.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 7)
@@ -379,6 +388,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       blindado: flag('blindado'),
       de_leilao: flag('de_leilao'),
       com_multas: flag('com_multas'),
+      sinistro: flag('sinistro'),
       // Sem OLX conectada estes campos nem vão no salvamento.
       wm_garantia_fabrica: flag('wm_garantia_fabrica'),
       wm_adaptado_pcd: flag('wm_adaptado_pcd'),
@@ -609,6 +619,33 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
             A Júlia fala do histórico veicular deste carro e envia o PDF quando o cliente pedir. Sem histórico aqui, ela usa a regra
             geral da loja. Ao enviar o PDF, a IA lê o documento e preenche os campos vazios para você conferir.
           </p>
+          <div className="mb-4 grid gap-4 sm:grid-cols-2">
+            {HISTORICO_SIM_NAO.map((item) => (
+              <Field key={item.key} label={item.label}>
+                <div className="flex flex-wrap gap-2">
+                  {[false, true].map((valor) => (
+                    <button
+                      key={String(valor)}
+                      type="button"
+                      aria-pressed={flag(item.key) === valor}
+                      onClick={() => setFlag(item.key, valor)}
+                      className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                        flag(item.key) === valor
+                          ? 'border-brand-600 bg-brand-600 text-white'
+                          : 'border-ink-200 bg-white text-ink-700 hover:border-brand-300'
+                      }`}
+                    >
+                      {valor ? 'Sim' : 'Não'}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+            ))}
+            <p className="text-xs text-ink-500 sm:col-span-2">
+              Marcando Sim, a Júlia confirma quando o cliente perguntar e convida para ver o carro na loja com o consultor. Em Não,
+              ela responde que não tem, ou envia o PDF do histórico, se ele estiver aqui.
+            </p>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Select
               label="Resultado"
