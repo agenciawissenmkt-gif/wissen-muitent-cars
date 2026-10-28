@@ -251,6 +251,8 @@ export interface Car {
   blindado?: boolean | null
   de_leilao?: boolean | null
   com_multas?: boolean | null
+  /** Marcado pela loja: o carro tem sinistro. A Júlia confirma ao cliente quando ele pergunta. */
+  sinistro?: boolean | null
   /** Marca, modelo e versão no catálogo da OLX (código + nome), ao lado do texto da loja. */
   olx_marca_id?: number | null
   olx_modelo_id?: number | null
