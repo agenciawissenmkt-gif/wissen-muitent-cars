@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useTenant } from '../core/tenant'
-import { CAR_STATUS_LABEL, hasPendingReservation, type Car, type CarStatus } from '../core/types'
+import { CAR_STATUS_LABEL, hasPendingReservation, type Car, type CarStatus, type TipoVeiculo } from '../core/types'
 import { Button } from '../ui/Button'
 import { EmptyState, SkeletonCard, useToast } from '../ui/Feedback'
 import { Modal } from '../ui/Modal'
@@ -19,6 +19,14 @@ const FILTERS: Filter[] = ['todos', 'ativo', 'solicitada', 'reservado']
 const FILTER_LABEL = (item: Filter) =>
   item === 'todos' ? 'Todos' : item === 'solicitada' ? 'Reserva solicitada' : CAR_STATUS_LABEL[item]
 
+// Carros x motos: o filtro so aparece quando a loja tem moto cadastrada.
+type FiltroTipo = 'todos' | TipoVeiculo
+const TIPOS_FILTRO: { id: TipoVeiculo; label: string }[] = [
+  { id: 'carro', label: 'Carros' },
+  { id: 'moto', label: 'Motos' },
+]
+const tipoDe = (car: Car): TipoVeiculo => (car.tipo_veiculo === 'moto' ? 'moto' : 'carro')
+
 export function Inventory() {
   const { store } = useTenant()
   const { toast } = useToast()
@@ -29,6 +37,7 @@ export function Inventory() {
 
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('todos')
+  const [filtroTipo, setFiltroTipo] = useState<FiltroTipo>('todos')
   const [formOpen, setFormOpen] = useState(false)
   const [editing, setEditing] = useState<Car | null>(null)
   const [deleting, setDeleting] = useState<Car | null>(null)
@@ -38,6 +47,9 @@ export function Inventory() {
   const [depositBusy, setDepositBusy] = useState<string | null>(null)
 
   const cars = useMemo(() => allCars.filter((car) => car.status !== 'vendido'), [allCars])
+  const temMotos = useMemo(() => cars.some((car) => tipoDe(car) === 'moto'), [cars])
+  // Sem moto no estoque o filtro some; nao deixa a lista presa num filtro escondido.
+  const tipoAtivo: FiltroTipo = temMotos ? filtroTipo : 'todos'
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -45,10 +57,18 @@ export function Inventory() {
       const matchesStatus =
         filter === 'todos' || (filter === 'solicitada' ? hasPendingReservation(car) : car.status === filter)
       if (!matchesStatus) return false
+      if (tipoAtivo !== 'todos' && tipoDe(car) !== tipoAtivo) return false
       if (!term) return true
-      return `${car.brand ?? ''} ${car.model} ${car.version ?? ''} ${car.color ?? ''}`.toLowerCase().includes(term)
+      return `${car.brand ?? ''} ${car.model} ${car.version ?? ''} ${car.color ?? ''} ${tipoDe(car) === 'moto' ? 'moto' : ''}`
+        .toLowerCase()
+        .includes(term)
     })
-  }, [cars, search, filter])
+  }, [cars, search, filter, tipoAtivo])
+
+  const contagemTipo = useMemo(
+    () => ({ carro: cars.filter((car) => tipoDe(car) === 'carro').length, moto: cars.filter((car) => tipoDe(car) === 'moto').length }),
+    [cars],
+  )
 
   const counts = useMemo(() => {
     return {
@@ -140,8 +160,8 @@ export function Inventory() {
         </Button>
       </header>
 
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="relative min-w-[16rem] flex-1">
           <SearchIcon className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-ink-400" />
           <input
             value={search}
@@ -167,6 +187,29 @@ export function Inventory() {
               <span className={`ml-2 text-xs ${filter === item ? 'text-white/70' : 'text-ink-400'}`}>{counts[item]}</span>
             </button>
           ))}
+          {temMotos && (
+            <>
+              <span aria-hidden="true" className="my-1 w-px shrink-0 bg-ink-200" />
+              {TIPOS_FILTRO.map((tipo) => (
+                <button
+                  key={tipo.id}
+                  type="button"
+                  aria-pressed={tipoAtivo === tipo.id}
+                  onClick={() => setFiltroTipo(tipoAtivo === tipo.id ? 'todos' : tipo.id)}
+                  className={`shrink-0 rounded-2xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                    tipoAtivo === tipo.id
+                      ? 'border-brand-600 bg-brand-600 text-white shadow-md shadow-brand-600/20'
+                      : 'border-ink-200 bg-white text-ink-600 hover:border-brand-300 hover:text-brand-700'
+                  }`}
+                >
+                  {tipo.label}
+                  <span className={`ml-2 text-xs ${tipoAtivo === tipo.id ? 'text-white/70' : 'text-ink-400'}`}>
+                    {contagemTipo[tipo.id]}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -188,7 +231,7 @@ export function Inventory() {
             description={
               cars.length === 0
                 ? 'Cadastre o primeiro veículo com fotos e ficha técnica para o agente de IA começar a vender.'
-                : 'Tente outro termo de busca ou remova o filtro de status.'
+                : 'Tente outro termo de busca ou remova os filtros.'
             }
             action={
               cars.length === 0 ? (

@@ -28,7 +28,8 @@ import { InfoNote, StepCard } from './StepCard'
 const AGENT_TYPES: AgentType[] = ['descoberta', 'encantamento', 'fechamento']
 
 const PAYMENT_METHODS = ['À vista', 'Financiamento', 'Consórcio', 'Cartão de crédito', 'Pix', 'Troca'] as const
-const VEHICLE_CATEGORIES = ['Hatch', 'Sedã', 'SUV', 'Picape', 'Utilitário', 'Esportivo', 'Van'] as const
+// "Moto": a loja tambem vende motos (a Julia passa a oferecer moto para quem procura moto).
+const VEHICLE_CATEGORIES = ['Hatch', 'Sedã', 'SUV', 'Picape', 'Utilitário', 'Esportivo', 'Van', 'Moto'] as const
 const VEHICLE_CONDITIONS = ['Seminovo', 'Usado', 'Zero km', 'Leilão'] as const
 const UFS = [
   'AC','AL','AM','AP','BA','CE','DF','ES','GO','MA','MG','MS','MT','PA','PB','PE','PI','PR','RJ','RN','RO','RR','RS','SC','SE','SP','TO',

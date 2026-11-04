@@ -37,6 +37,11 @@ export type FichaIA = {
   keyless_entry?: string
   parking_sensor?: string
   rear_camera?: string
+  // So na ficha de moto (o servidor pede outro conjunto de campos).
+  cilindrada_cc?: number
+  estilo_moto?: string
+  freio_abs?: string
+  partida_eletrica?: string
 }
 
 // Nome de cada campo como aparece no formulario, para dizer o que ficou em branco.
@@ -48,9 +53,12 @@ const NOME_DO_CAMPO: Record<string, string> = {
   trunk_liters: 'porta-malas', leather_seats: 'banco de couro', keyless_entry: 'chave presencial',
   parking_sensor: 'sensor de estacionamento', rear_camera: 'câmera de ré',
   consumo_cidade: 'consumo na cidade', consumo_estrada: 'consumo na estrada', nivel_consumo: 'nível de consumo',
+  cilindrada_cc: 'cilindrada', estilo_moto: 'estilo', freio_abs: 'freio ABS', partida_eletrica: 'partida elétrica',
 }
 
 type Props = {
+  /** Moto usa outra ficha: cilindrada, estilo, ABS e partida elétrica, sem portas e opcionais de carro. */
+  tipo?: 'carro' | 'moto'
   brand?: string
   model?: string
   modelYear?: number | string
@@ -58,7 +66,7 @@ type Props = {
   onPreencher: (ficha: FichaIA) => void
 }
 
-export function BotaoFichaIA({ brand, model, modelYear, version, onPreencher }: Props) {
+export function BotaoFichaIA({ tipo = 'carro', brand, model, modelYear, version, onPreencher }: Props) {
   const { store } = useTenant()
   const tenantId = store?.tenant_id ?? null
 
@@ -74,7 +82,7 @@ export function BotaoFichaIA({ brand, model, modelYear, version, onPreencher }: 
     setAviso(null)
     setCarregando(true)
     try {
-      const dados = await gerarFichaTecnica({ tenant_id: tenantId, brand, model, model_year: modelYear, version })
+      const dados = await gerarFichaTecnica({ tenant_id: tenantId, brand, model, model_year: modelYear, version, tipo_veiculo: tipo })
 
       onPreencher((dados.ficha || {}) as FichaIA)
 

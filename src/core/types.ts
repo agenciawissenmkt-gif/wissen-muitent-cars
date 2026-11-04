@@ -9,6 +9,9 @@
 
 export type CarStatus = 'ativo' | 'reservado' | 'vendido'
 
+/** Carro ou moto (migracao 0059). Cadastro antigo, sem o campo, e carro. */
+export type TipoVeiculo = 'carro' | 'moto'
+
 export type OnboardingStep = 'perfil' | 'chatwoot' | 'calendar' | 'evolution' | 'concluido'
 
 /** 'pesquisa' e 'completo' sao os valores antigos: hoje tudo e 'historico' (historico veicular). */
@@ -185,6 +188,13 @@ export interface Car {
   tenant_id: string
   store_id: string | null
   external_id: string | null
+  /** 'moto' liga os campos de moto no cadastro e na Julia. Padrao 'carro'. */
+  tipo_veiculo?: TipoVeiculo | null
+  /** So moto: cilindrada em cc, estilo (ESTILOS_MOTO), freio ABS e partida eletrica (Sim/Não). */
+  cilindrada_cc?: number | null
+  estilo_moto?: string | null
+  freio_abs?: string | null
+  partida_eletrica?: string | null
   brand: string | null
   model: string
   version: string | null
@@ -372,6 +382,13 @@ export const ONBOARDING_TO_STEP: Record<OnboardingStep, number> = {
 }
 
 export const TRANSMISSIONS = ['Manual', 'Automático', 'Automatizado', 'CVT'] as const
+/** Moto: as mesmas listas que a ficha da IA usa (server/routes/ficha.js, OPCOES_MOTO). */
+export const ESTILOS_MOTO = ['Street', 'Naked', 'Esportiva', 'Trail', 'Big Trail', 'Scooter', 'Motoneta', 'Custom', 'Touring', 'Off Road'] as const
+export const TRANSMISSOES_MOTO = ['Manual', 'Automático', 'Semiautomático'] as const
+export const COMBUSTIVEIS_MOTO = ['Gasolina', 'Flex', 'Elétrico'] as const
+/** Cilindrada aceita no banco (constraint cars_cilindrada_cc_check). */
+export const CILINDRADA_MIN = 30
+export const CILINDRADA_MAX = 3000
 export const FUELS = ['Flex', 'Gasolina', 'Etanol', 'Diesel', 'Híbrido', 'Elétrico', 'GNV'] as const
 export const BODY_TYPES = ['Hatch', 'Sedã', 'SUV', 'Picape', 'Utilitário', 'Coupé', 'Conversível', 'Minivan'] as const
 export const TRACTIONS = ['Dianteira', 'Traseira', '4x4', 'AWD'] as const

@@ -6,6 +6,12 @@ import { webmotorsDepoisDeMudar } from '../../core/webmotors'
 
 /** Campos editáveis pelo painel — espelham as colunas de `cars`. */
 export interface CarDraft {
+  /** Carro ou moto. Na moto, os campos que so existem em carro vao como null. */
+  tipo_veiculo: 'carro' | 'moto'
+  cilindrada_cc: number | null
+  estilo_moto: string | null
+  freio_abs: string | null
+  partida_eletrica: string | null
   brand: string | null
   model: string
   version: string | null

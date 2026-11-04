@@ -6,6 +6,10 @@ import {
   BODY_TYPES,
   CAR_STATUS_LABEL,
   CARPLAY_OPTIONS,
+  CILINDRADA_MAX,
+  CILINDRADA_MIN,
+  COMBUSTIVEIS_MOTO,
+  ESTILOS_MOTO,
   LAUDO_RESULTADO_LABEL,
   FUELS,
   NIVEIS_CONSUMO,
@@ -13,10 +17,12 @@ import {
   SUNROOFS,
   TRACTIONS,
   TRANSMISSIONS,
+  TRANSMISSOES_MOTO,
   YES_NO,
   type Car,
   type CarStatus,
   type LaudoResultado,
+  type TipoVeiculo,
 } from '../../core/types'
 import { PhotoPicker } from './PhotoPicker'
 import { subirLaudoPdf, type CarDraft, type LaudoPdf, type PhotoItem } from './useCars'
@@ -51,6 +57,7 @@ const TEXT_FIELDS = [
   'sunroof', 'carplay_android_auto', 'trunk_liters', 'leather_seats', 'keyless_entry', 'parking_sensor',
   'rear_camera', 'consumo_cidade', 'consumo_estrada', 'nivel_consumo', 'description', 'laudo_resultado', 'laudo_empresa', 'laudo_data', 'laudo_obs',
   'placa', 'situacao_financeira',
+  'tipo_veiculo', 'cilindrada_cc', 'estilo_moto', 'freio_abs', 'partida_eletrica',
 ] as const
 
 const BOOL_FIELDS = [
@@ -61,19 +68,35 @@ const BOOL_FIELDS = [
 
 const EMPTY_TEXT = Object.fromEntries(TEXT_FIELDS.map((field) => [field, ''])) as Record<string, string>
 
-const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string }[] = [
+// soCarro: não aparece no cadastro de moto (e vai como false ao salvar a moto).
+// Garantia de fábrica e PcD são campos que só a Webmotors pede, e moto não vai para lá.
+const PROVENANCE: { key: (typeof BOOL_FIELDS)[number]; label: string; soCarro?: boolean }[] = [
   { key: 'single_owner', label: 'Único dono' },
   { key: 'dealer_revisions', label: 'Revisões em concessionária' },
   { key: 'ipva_paid', label: 'IPVA pago' },
   { key: 'licensed', label: 'Licenciado' },
   { key: 'chave_reserva', label: 'Chave reserva' },
   { key: 'manual_proprietario', label: 'Manual do proprietário' },
-  { key: 'blindado', label: 'Blindado' },
+  { key: 'blindado', label: 'Blindado', soCarro: true },
   { key: 'de_leilao', label: 'De leilão' },
   { key: 'com_multas', label: 'Com multas' },
-  { key: 'wm_garantia_fabrica', label: 'Garantia de fábrica' },
-  { key: 'wm_adaptado_pcd', label: 'Adaptado para PcD' },
+  { key: 'wm_garantia_fabrica', label: 'Garantia de fábrica', soCarro: true },
+  { key: 'wm_adaptado_pcd', label: 'Adaptado para PcD', soCarro: true },
 ]
+
+const TIPOS: { id: TipoVeiculo; label: string }[] = [
+  { id: 'carro', label: 'Carro' },
+  { id: 'moto', label: 'Moto' },
+]
+
+/** Lista do select com o valor salvo junto, se ele não estiver nela (cadastro antigo ou importado). */
+const opcoesCom = (lista: readonly string[], atual: string) => (atual && !lista.includes(atual) ? [...lista, atual] : lista)
+
+const cilindradaOk = (valor: string) => {
+  if (!valor.trim()) return true
+  const n = Number(valor)
+  return Number.isInteger(n) && n >= CILINDRADA_MIN && n <= CILINDRADA_MAX
+}
 
 const SITUACOES_FINANCEIRAS = { quitado: 'Quitado', financiado: 'Financiado' } as const
 
@@ -97,6 +120,8 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
   const [avisoLaudo, setAvisoLaudo] = useState<{ tom: 'ok' | 'erro'; texto: string } | null>(null)
   const leituraAtual = useRef(0)
   const formRef = useRef<Record<string, string>>({})
+  // Câmbio e combustível de antes da troca carro <-> moto, para voltar se a loja desfizer.
+  const antesDaTroca = useRef<{ transmission: string; fuel: string } | null>(null)
   const { store } = useTenant()
   const tenantId = store?.tenant_id ?? null
   const [saving, setSaving] = useState(false)
@@ -165,6 +190,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     setAjustesAbertos(false)
     setEscolhendoDestinos(false)
     leituraAtual.current++
+    antesDaTroca.current = null
 
     if (car) {
       const next: Record<string, string> = {}
@@ -174,6 +200,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       }
       // Cadastro antigo com so o ano de fabricacao: mostra ele como ano do modelo.
       if (!next.model_year && car.year) next.model_year = String(car.year)
+      if (next.tipo_veiculo !== 'moto') next.tipo_veiculo = 'carro'
       setForm({ ...next, status: car.status } as FormState)
       setFlags(Object.fromEntries(BOOL_FIELDS.map((field) => [field, Boolean(car[field])])))
       setOlxCampos({
@@ -203,7 +230,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         })),
       )
     } else {
-      setForm({ ...EMPTY_TEXT, doors: '4', status: 'ativo' } as FormState)
+      setForm({ ...EMPTY_TEXT, tipo_veiculo: 'carro', doors: '4', status: 'ativo' } as FormState)
       setFlags({ accepts_trade: true })
       setOlxCampos(OLX_VAZIO)
       setWmCampos(WEBMOTORS_VAZIO)
@@ -213,6 +240,30 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
 
   const set = (key: string, value: string) => setForm((prev) => ({ ...prev, [key]: value }))
   formRef.current = form
+
+  // Moto: ficha técnica própria, sem os campos que só existem em carro, e fora da OLX/Webmotors.
+  const moto = form.tipo_veiculo === 'moto'
+
+  /**
+   * Troca carro <-> moto. Câmbio e combustível que não existem no outro tipo ficam em
+   * branco, e voltam se a loja desfizer a troca. Os campos escondidos (portas, opcionais...)
+   * continuam no formulário; só vão como vazios se salvar como moto.
+   */
+  function trocaTipo(tipo: TipoVeiculo) {
+    if (form.tipo_veiculo === tipo) return
+    const cambios: readonly string[] = tipo === 'moto' ? TRANSMISSOES_MOTO : TRANSMISSIONS
+    const combustiveis: readonly string[] = tipo === 'moto' ? COMBUSTIVEIS_MOTO : FUELS
+    const antes = antesDaTroca.current
+    antesDaTroca.current = { transmission: form.transmission, fuel: form.fuel }
+    const escolhe = (lista: readonly string[], atual: string, guardado?: string) =>
+      lista.includes(atual) ? atual : guardado && lista.includes(guardado) ? guardado : ''
+    setForm((prev) => ({
+      ...prev,
+      tipo_veiculo: tipo,
+      transmission: escolhe(cambios, prev.transmission, antes?.transmission),
+      fuel: escolhe(combustiveis, prev.fuel, antes?.fuel),
+    }))
+  }
 
   /** PDF que vale agora: o novo escolhido, o que já estava salvo ou nenhum. */
   const pdfAtual =
@@ -314,9 +365,13 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       setError('A placa precisa ter 7 caracteres, no formato ABC1234 ou ABC1D23.')
       return
     }
+    if (moto && !cilindradaOk(form.cilindrada_cc ?? '')) {
+      setError(`A cilindrada precisa ser um número inteiro entre ${CILINDRADA_MIN} e ${CILINDRADA_MAX} cc.`)
+      return
+    }
 
-    // Com OLX/Webmotors conectada, pergunta antes onde anunciar.
-    if (!destinos && plataformas.length) {
+    // Com OLX/Webmotors conectada, pergunta antes onde anunciar. Moto ainda não vai para elas.
+    if (!destinos && plataformas.length && !moto) {
       setError(null)
       setEscolhendoDestinos(true)
       return
@@ -325,16 +380,25 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
     setSaving(true)
     setError(null)
 
+    // Moto: os campos que só existem em carro vão vazios (a Julia e a busca leem o tipo).
+    const soCarro = <T,>(valor: T): T | null => (moto ? null : valor)
+    const soMoto = <T,>(valor: T): T | null => (moto ? valor : null)
+
     const draft: CarDraft = {
+      tipo_veiculo: moto ? 'moto' : 'carro',
+      cilindrada_cc: soMoto(num(form.cilindrada_cc ?? '')),
+      estilo_moto: soMoto(text(form.estilo_moto ?? '')),
+      freio_abs: soMoto(text(form.freio_abs ?? '')),
+      partida_eletrica: soMoto(text(form.partida_eletrica ?? '')),
       brand: text(form.brand),
       model: form.model.trim(),
       version: text(form.version),
       year: num(form.model_year),
       model_year: num(form.model_year),
       color: text(form.color),
-      doors: num(form.doors),
+      doors: soCarro(num(form.doors)),
       transmission: text(form.transmission),
-      body_type: text(form.body_type),
+      body_type: soCarro(text(form.body_type)),
       fuel: text(form.fuel),
       mileage_km: num(form.mileage_km),
       price_brl: num(form.price_brl),
@@ -342,19 +406,19 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
       cylinders: text(form.cylinders),
       horsepower: text(form.horsepower),
       torque: text(form.torque),
-      acceleration_0_100: text(form.acceleration_0_100),
-      aspiration: text(form.aspiration),
-      traction: text(form.traction),
-      air_conditioning: text(form.air_conditioning),
-      steering: text(form.steering),
-      electric_windows: text(form.electric_windows),
-      sunroof: text(form.sunroof),
-      carplay_android_auto: text(form.carplay_android_auto),
-      trunk_liters: num(form.trunk_liters),
-      leather_seats: text(form.leather_seats),
-      keyless_entry: text(form.keyless_entry),
-      parking_sensor: text(form.parking_sensor),
-      rear_camera: text(form.rear_camera),
+      acceleration_0_100: soCarro(text(form.acceleration_0_100)),
+      aspiration: soCarro(text(form.aspiration)),
+      traction: soCarro(text(form.traction)),
+      air_conditioning: soCarro(text(form.air_conditioning)),
+      steering: soCarro(text(form.steering)),
+      electric_windows: soCarro(text(form.electric_windows)),
+      sunroof: soCarro(text(form.sunroof)),
+      carplay_android_auto: soCarro(text(form.carplay_android_auto)),
+      trunk_liters: soCarro(num(form.trunk_liters)),
+      leather_seats: soCarro(text(form.leather_seats)),
+      keyless_entry: soCarro(text(form.keyless_entry)),
+      parking_sensor: soCarro(text(form.parking_sensor)),
+      rear_camera: soCarro(text(form.rear_camera)),
       consumo_cidade: text(form.consumo_cidade),
       consumo_estrada: text(form.consumo_estrada),
       nivel_consumo: text(form.nivel_consumo),
@@ -376,15 +440,20 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         form.situacao_financeira === 'quitado' || form.situacao_financeira === 'financiado' ? form.situacao_financeira : null,
       chave_reserva: flag('chave_reserva'),
       manual_proprietario: flag('manual_proprietario'),
-      blindado: flag('blindado'),
+      blindado: !moto && flag('blindado'),
       de_leilao: flag('de_leilao'),
       com_multas: flag('com_multas'),
-      // Sem OLX conectada estes campos nem vão no salvamento.
-      wm_garantia_fabrica: flag('wm_garantia_fabrica'),
-      wm_adaptado_pcd: flag('wm_adaptado_pcd'),
-      ...(olxConectada ? { ...olxCampos, olx_publicar: destinos?.olx ?? olxCampos.olx_publicar } : {}),
-      // Idem para a Webmotors: sem conexão, as colunas de anúncio dela nem entram no salvamento.
-      ...(webmotorsConectada ? { ...wmCampos, wm_publicar: destinos?.webmotors ?? wmCampos.wm_publicar } : {}),
+      wm_garantia_fabrica: !moto && flag('wm_garantia_fabrica'),
+      wm_adaptado_pcd: !moto && flag('wm_adaptado_pcd'),
+      ...(moto
+        ? // Moto fica fora da OLX e da Webmotors (o anúncio de lá é de carro). Se já estava lá, sai.
+          { olx_publicar: false, wm_publicar: false }
+        : {
+            // Sem OLX conectada estes campos nem vão no salvamento.
+            ...(olxConectada ? { ...olxCampos, olx_publicar: destinos?.olx ?? olxCampos.olx_publicar } : {}),
+            // Idem para a Webmotors: sem conexão, as colunas de anúncio dela nem entram no salvamento.
+            ...(webmotorsConectada ? { ...wmCampos, wm_publicar: destinos?.webmotors ?? wmCampos.wm_publicar } : {}),
+          }),
     }
 
     try {
@@ -433,20 +502,46 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
 
         <section>
           <h3 className="mb-1 text-sm font-bold text-ink-900">Identificação</h3>
-          <p className="mb-3 text-xs text-ink-500">Dados deste carro. Preenchidos por você, a IA não mexe aqui.</p>
+          <p className="mb-3 text-xs text-ink-500">
+            Dados {moto ? 'desta moto' : 'deste carro'}. Preenchidos por você, a IA não mexe aqui.
+          </p>
+          <Field label="Tipo de veículo" className="mb-4">
+            <div className="flex flex-wrap gap-2">
+              {TIPOS.map((tipo) => (
+                <button
+                  key={tipo.id}
+                  type="button"
+                  onClick={() => trocaTipo(tipo.id)}
+                  aria-pressed={form.tipo_veiculo === tipo.id}
+                  className={`rounded-xl border px-4 py-2.5 text-sm font-semibold transition-all ${
+                    form.tipo_veiculo === tipo.id
+                      ? 'border-brand-600 bg-brand-600 text-white'
+                      : 'border-ink-200 bg-white text-ink-700 hover:border-brand-300'
+                  }`}
+                >
+                  {tipo.label}
+                </button>
+              ))}
+            </div>
+            {moto && plataformas.length > 0 && (
+              <p className="mt-2 text-xs text-ink-500">
+                Motos ainda não vão para a OLX nem para a Webmotors. A Júlia oferece normalmente no WhatsApp.
+              </p>
+            )}
+          </Field>
           <div className="grid gap-4 sm:grid-cols-2">
-            <Input label="Marca" value={form.brand} onChange={(e) => set('brand', e.target.value)} placeholder="Toyota" />
-            <Input label="Modelo" required value={form.model} onChange={(e) => set('model', e.target.value)} placeholder="Corolla" />
+            <Input label="Marca" value={form.brand} onChange={(e) => set('brand', e.target.value)} placeholder={moto ? 'Honda' : 'Toyota'} />
+            <Input label="Modelo" required value={form.model} onChange={(e) => set('model', e.target.value)} placeholder={moto ? 'CG 160' : 'Corolla'} />
             <Input
               label="Versão"
               className="sm:col-span-2"
               value={form.version}
               onChange={(e) => set('version', e.target.value)}
-              placeholder="XEi 2.0 Flex 16V Aut."
+              placeholder={moto ? 'Titan' : 'XEi 2.0 Flex 16V Aut.'}
             />
             <Input label="Ano do modelo" inputMode="numeric" value={form.model_year} onChange={(e) => set('model_year', e.target.value)} placeholder="2023" />
-            <Input label="Cor" value={form.color} onChange={(e) => set('color', e.target.value)} placeholder="Prata" />
-            <Input label="Quilometragem" inputMode="numeric" value={form.mileage_km} onChange={(e) => set('mileage_km', e.target.value)} placeholder="45000" hint="Somente números" />
+            <Input label="Cor" value={form.color} onChange={(e) => set('color', e.target.value)} placeholder={moto ? 'Vermelha' : 'Prata'} />
+            <Input label="Quilometragem" inputMode="numeric" value={form.mileage_km} onChange={(e) => set('mileage_km', e.target.value)} placeholder={moto ? '12000' : '45000'} hint="Somente números" />
             <Input
               label="Placa"
               value={form.placa}
@@ -462,13 +557,14 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
               inputMode="decimal"
               value={form.price_brl}
               onChange={(e) => set('price_brl', e.target.value)}
-              placeholder="129900"
+              placeholder={moto ? '18900' : '129900'}
             />
           </div>
         </section>
 
         <section>
           <BotaoFichaIA
+            tipo={moto ? 'moto' : 'carro'}
             brand={form.brand}
             model={form.model}
             modelYear={form.model_year}
@@ -481,34 +577,61 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
             }
           />
           <h3 className="mb-3 text-sm font-bold text-ink-900">Ficha técnica</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input label="Motor" value={form.engine} onChange={(e) => set('engine', e.target.value)} placeholder="2.0 16V" />
-            <Input label="Potência" value={form.horsepower} onChange={(e) => set('horsepower', e.target.value)} placeholder="177 cv" />
-            <Input label="Torque" value={form.torque} onChange={(e) => set('torque', e.target.value)} placeholder="21,4 kgfm" />
-            <Input label="0 a 100 km/h" value={form.acceleration_0_100} onChange={(e) => set('acceleration_0_100', e.target.value)} placeholder="9,3 s" />
-            <Select label="Câmbio" options={TRANSMISSIONS} placeholder="Selecione" value={form.transmission} onChange={(e) => set('transmission', e.target.value)} />
-            <Select label="Combustível" options={FUELS} placeholder="Selecione" value={form.fuel} onChange={(e) => set('fuel', e.target.value)} />
-            <Select label="Carroceria" options={BODY_TYPES} placeholder="Selecione" value={form.body_type} onChange={(e) => set('body_type', e.target.value)} />
-            <Select label="Tração" options={TRACTIONS} placeholder="Selecione" value={form.traction} onChange={(e) => set('traction', e.target.value)} />
-            <Input label="Portas" inputMode="numeric" value={form.doors} onChange={(e) => set('doors', e.target.value)} placeholder="4" />
-            <Input label="Porta-malas" inputMode="numeric" value={form.trunk_liters} onChange={(e) => set('trunk_liters', e.target.value)} placeholder="470" hint="Em litros" />
-            <Input label="Consumo na cidade" value={form.consumo_cidade} onChange={(e) => set('consumo_cidade', e.target.value)} placeholder="11,8 km/l" hint="No flex, com gasolina" />
-            <Input label="Consumo na estrada" value={form.consumo_estrada} onChange={(e) => set('consumo_estrada', e.target.value)} placeholder="14,2 km/l" hint="No flex, com gasolina" />
-            <Select label="Nível de consumo" options={NIVEIS_CONSUMO} placeholder="Selecione" value={form.nivel_consumo} onChange={(e) => set('nivel_consumo', e.target.value)} />
-          </div>
+          {moto ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Input
+                label="Cilindrada"
+                inputMode="numeric"
+                value={form.cilindrada_cc}
+                onChange={(e) => set('cilindrada_cc', e.target.value.replace(/\D/g, ''))}
+                placeholder="160"
+                hint="Em cc"
+                error={cilindradaOk(form.cilindrada_cc ?? '') ? undefined : `Entre ${CILINDRADA_MIN} e ${CILINDRADA_MAX} cc`}
+              />
+              <Select label="Estilo" options={opcoesCom(ESTILOS_MOTO, form.estilo_moto)} placeholder="Selecione" value={form.estilo_moto} onChange={(e) => set('estilo_moto', e.target.value)} />
+              <Input label="Motor" value={form.engine} onChange={(e) => set('engine', e.target.value)} placeholder="160 cc, monocilíndrico" />
+              <Input label="Potência" value={form.horsepower} onChange={(e) => set('horsepower', e.target.value)} placeholder="14,9 cv" />
+              <Input label="Torque" value={form.torque} onChange={(e) => set('torque', e.target.value)} placeholder="1,4 kgfm" />
+              <Select label="Câmbio" options={opcoesCom(TRANSMISSOES_MOTO, form.transmission)} placeholder="Selecione" value={form.transmission} onChange={(e) => set('transmission', e.target.value)} />
+              <Select label="Combustível" options={opcoesCom(COMBUSTIVEIS_MOTO, form.fuel)} placeholder="Selecione" value={form.fuel} onChange={(e) => set('fuel', e.target.value)} />
+              <Select label="Freio ABS" options={opcoesCom(YES_NO, form.freio_abs)} placeholder="Selecione" value={form.freio_abs} onChange={(e) => set('freio_abs', e.target.value)} />
+              <Select label="Partida elétrica" options={opcoesCom(YES_NO, form.partida_eletrica)} placeholder="Selecione" value={form.partida_eletrica} onChange={(e) => set('partida_eletrica', e.target.value)} />
+              <Input label="Consumo na cidade" value={form.consumo_cidade} onChange={(e) => set('consumo_cidade', e.target.value)} placeholder="40 km/l" hint="No flex, com gasolina" />
+              <Input label="Consumo na estrada" value={form.consumo_estrada} onChange={(e) => set('consumo_estrada', e.target.value)} placeholder="45 km/l" hint="No flex, com gasolina" />
+              <Select label="Nível de consumo" options={NIVEIS_CONSUMO} placeholder="Selecione" value={form.nivel_consumo} onChange={(e) => set('nivel_consumo', e.target.value)} />
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Input label="Motor" value={form.engine} onChange={(e) => set('engine', e.target.value)} placeholder="2.0 16V" />
+                <Input label="Potência" value={form.horsepower} onChange={(e) => set('horsepower', e.target.value)} placeholder="177 cv" />
+                <Input label="Torque" value={form.torque} onChange={(e) => set('torque', e.target.value)} placeholder="21,4 kgfm" />
+                <Input label="0 a 100 km/h" value={form.acceleration_0_100} onChange={(e) => set('acceleration_0_100', e.target.value)} placeholder="9,3 s" />
+                <Select label="Câmbio" options={TRANSMISSIONS} placeholder="Selecione" value={form.transmission} onChange={(e) => set('transmission', e.target.value)} />
+                <Select label="Combustível" options={FUELS} placeholder="Selecione" value={form.fuel} onChange={(e) => set('fuel', e.target.value)} />
+                <Select label="Carroceria" options={BODY_TYPES} placeholder="Selecione" value={form.body_type} onChange={(e) => set('body_type', e.target.value)} />
+                <Select label="Tração" options={TRACTIONS} placeholder="Selecione" value={form.traction} onChange={(e) => set('traction', e.target.value)} />
+                <Input label="Portas" inputMode="numeric" value={form.doors} onChange={(e) => set('doors', e.target.value)} placeholder="4" />
+                <Input label="Porta-malas" inputMode="numeric" value={form.trunk_liters} onChange={(e) => set('trunk_liters', e.target.value)} placeholder="470" hint="Em litros" />
+                <Input label="Consumo na cidade" value={form.consumo_cidade} onChange={(e) => set('consumo_cidade', e.target.value)} placeholder="11,8 km/l" hint="No flex, com gasolina" />
+                <Input label="Consumo na estrada" value={form.consumo_estrada} onChange={(e) => set('consumo_estrada', e.target.value)} placeholder="14,2 km/l" hint="No flex, com gasolina" />
+                <Select label="Nível de consumo" options={NIVEIS_CONSUMO} placeholder="Selecione" value={form.nivel_consumo} onChange={(e) => set('nivel_consumo', e.target.value)} />
+              </div>
 
-          <h3 className="mb-3 mt-6 text-sm font-bold text-ink-900">Conforto e tecnologia</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Select label="Teto solar" options={SUNROOFS} placeholder="Selecione" value={form.sunroof} onChange={(e) => set('sunroof', e.target.value)} />
-            <Select label="CarPlay / Android Auto" options={CARPLAY_OPTIONS} placeholder="Selecione" value={form.carplay_android_auto} onChange={(e) => set('carplay_android_auto', e.target.value)} />
-            <Select label="Banco de couro" options={YES_NO} placeholder="Selecione" value={form.leather_seats} onChange={(e) => set('leather_seats', e.target.value)} />
-            <Select label="Chave presencial" options={YES_NO} placeholder="Selecione" value={form.keyless_entry} onChange={(e) => set('keyless_entry', e.target.value)} />
-            <Select label="Sensor de estacionamento" options={PARKING_SENSORS} placeholder="Selecione" value={form.parking_sensor} onChange={(e) => set('parking_sensor', e.target.value)} />
-            <Select label="Câmera de ré" options={YES_NO} placeholder="Selecione" value={form.rear_camera} onChange={(e) => set('rear_camera', e.target.value)} />
-            <Input label="Ar-condicionado" value={form.air_conditioning} onChange={(e) => set('air_conditioning', e.target.value)} placeholder="Dual zone" />
-            <Input label="Direção" value={form.steering} onChange={(e) => set('steering', e.target.value)} placeholder="Elétrica" />
-            <Input label="Vidros elétricos" value={form.electric_windows} onChange={(e) => set('electric_windows', e.target.value)} placeholder="4 portas" />
-          </div>
+              <h3 className="mb-3 mt-6 text-sm font-bold text-ink-900">Conforto e tecnologia</h3>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Select label="Teto solar" options={SUNROOFS} placeholder="Selecione" value={form.sunroof} onChange={(e) => set('sunroof', e.target.value)} />
+                <Select label="CarPlay / Android Auto" options={CARPLAY_OPTIONS} placeholder="Selecione" value={form.carplay_android_auto} onChange={(e) => set('carplay_android_auto', e.target.value)} />
+                <Select label="Banco de couro" options={YES_NO} placeholder="Selecione" value={form.leather_seats} onChange={(e) => set('leather_seats', e.target.value)} />
+                <Select label="Chave presencial" options={YES_NO} placeholder="Selecione" value={form.keyless_entry} onChange={(e) => set('keyless_entry', e.target.value)} />
+                <Select label="Sensor de estacionamento" options={PARKING_SENSORS} placeholder="Selecione" value={form.parking_sensor} onChange={(e) => set('parking_sensor', e.target.value)} />
+                <Select label="Câmera de ré" options={YES_NO} placeholder="Selecione" value={form.rear_camera} onChange={(e) => set('rear_camera', e.target.value)} />
+                <Input label="Ar-condicionado" value={form.air_conditioning} onChange={(e) => set('air_conditioning', e.target.value)} placeholder="Dual zone" />
+                <Input label="Direção" value={form.steering} onChange={(e) => set('steering', e.target.value)} placeholder="Elétrica" />
+                <Input label="Vidros elétricos" value={form.electric_windows} onChange={(e) => set('electric_windows', e.target.value)} placeholder="4 portas" />
+              </div>
+            </>
+          )}
 
           <details className="group mt-4 rounded-2xl border border-ink-200 bg-ink-50/50 p-4">
             <summary className="cursor-pointer list-none text-sm font-semibold text-ink-700 marker:hidden">
@@ -520,8 +643,10 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
               </span>
             </summary>
             <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <Input label="Cilindros" value={form.cylinders} onChange={(e) => set('cylinders', e.target.value)} placeholder="4 cilindros" />
-              <Input label="Aspiração" value={form.aspiration} onChange={(e) => set('aspiration', e.target.value)} placeholder="Turbo" />
+              <Input label="Cilindros" value={form.cylinders} onChange={(e) => set('cylinders', e.target.value)} placeholder={moto ? '1 cilindro' : '4 cilindros'} />
+              {!moto && (
+                <Input label="Aspiração" value={form.aspiration} onChange={(e) => set('aspiration', e.target.value)} placeholder="Turbo" />
+              )}
             </div>
           </details>
         </section>
@@ -529,7 +654,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         <section>
           <h3 className="mb-3 text-sm font-bold text-ink-900">Procedência</h3>
           <div className="flex flex-wrap gap-2">
-            {PROVENANCE.map((item) => (
+            {PROVENANCE.filter((item) => !(moto && item.soCarro)).map((item) => (
               <CheckPill key={item.key} checked={flag(item.key)} onChange={(value) => setFlag(item.key, value)}>
                 {item.label}
               </CheckPill>
@@ -555,7 +680,7 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
           </Field>
         </section>
 
-        {plataformas.length > 0 && tenantId && abertura > 0 && (
+        {!moto && plataformas.length > 0 && tenantId && abertura > 0 && (
           <section className="rounded-3xl border border-ink-200 bg-ink-50/50 p-4">
             <button
               type="button"
@@ -604,9 +729,9 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
         )}
 
         <section>
-          <h3 className="mb-1 text-sm font-bold text-ink-900">Histórico veicular deste carro</h3>
+          <h3 className="mb-1 text-sm font-bold text-ink-900">Histórico veicular {moto ? 'desta moto' : 'deste carro'}</h3>
           <p className="mb-3 text-xs text-ink-500">
-            A Júlia fala do histórico veicular deste carro e envia o PDF quando o cliente pedir. Sem histórico aqui, ela usa a regra
+            A Júlia fala do histórico veicular {moto ? 'desta moto' : 'deste carro'} e envia o PDF quando o cliente pedir. Sem histórico aqui, ela usa a regra
             geral da loja. Ao enviar o PDF, a IA lê o documento e preenche os campos vazios para você conferir.
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -694,7 +819,9 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
                 label="Apontamentos"
                 value={form.laudo_obs}
                 onChange={(e) => set('laudo_obs', e.target.value)}
-                placeholder="Ex.: reparo no para-choque traseiro, sem dano estrutural."
+                placeholder={
+                  moto ? 'Ex.: carenagem lateral riscada, sem dano no quadro.' : 'Ex.: reparo no para-choque traseiro, sem dano estrutural.'
+                }
                 hint="O que o histórico veicular apontou. A Júlia fala disso com honestidade e passa os detalhes ao consultor."
               />
             </div>
@@ -736,7 +863,11 @@ export function CarFormModal({ open, car, onClose, onSave, onDelete }: Props) {
               value={form.description}
               onChange={(e) => set('description', e.target.value)}
               rows={8}
-              placeholder="Multimídia, câmera de ré, sensor de estacionamento, bancos em couro..."
+              placeholder={
+                moto
+                  ? 'Baú, protetor de motor, pneus novos, revisões em dia...'
+                  : 'Multimídia, câmera de ré, sensor de estacionamento, bancos em couro...'
+              }
               hint="Quanto mais detalhes, melhor o agente de IA apresenta o veículo. Este texto também vai para os sites de anúncio; os apontamentos do histórico veicular ficam só para a IA."
             />
           </div>

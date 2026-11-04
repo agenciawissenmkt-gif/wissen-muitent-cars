@@ -135,7 +135,8 @@ async function sincronizarCarro({ tenantId, conexao, carId, forcar = false, inic
   const jaNaWebmotors = Boolean(registro?.codigo_anuncio) && registro.situacao !== 'removido'
   // Quem decide e a escolha feita ao salvar o carro (wm_publicar). `forcar` fica so por compatibilidade.
   void forcar
-  const deveEstar = Boolean(car) && car.status === 'ativo' && car.wm_publicar !== false
+  // Moto ainda nao vai para a Webmotors: o anuncio montado aqui e de carro.
+  const deveEstar = Boolean(car) && car.status === 'ativo' && car.wm_publicar !== false && car.tipo_veiculo !== 'moto'
 
   if (!deveEstar) {
     if (!registro) return { situacao: 'fora' }
@@ -412,7 +413,7 @@ router.post(
     const inicio = Date.now()
 
     const [carros, registros] = await Promise.all([
-      db.select('cars', `tenant_id=eq.${tenant.id}&status=eq.ativo&wm_publicar=is.true&select=id&order=created_at.asc`),
+      db.select('cars', `tenant_id=eq.${tenant.id}&status=eq.ativo&wm_publicar=is.true&tipo_veiculo=neq.moto&select=id&order=created_at.asc`),
       db.select('webmotors_anuncios', `tenant_id=eq.${tenant.id}&select=car_id,situacao`),
     ])
     const prontos = new Set(registros.filter((r) => r.situacao === 'publicado').map((r) => r.car_id))
