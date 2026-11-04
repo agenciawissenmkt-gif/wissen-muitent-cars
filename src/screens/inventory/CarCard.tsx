@@ -29,9 +29,13 @@ export function CarCard({ car, onEdit, onSold, onDeposit, onCancelRequest, busy 
   const now = Date.now()
   const cover = car.car_photos[0]?.url ?? car.cover_url
 
+  const moto = car.tipo_veiculo === 'moto'
+
   const specs = [
     formatYear(car.year, car.model_year),
     formatKm(car.mileage_km),
+    moto && car.cilindrada_cc ? `${car.cilindrada_cc} cc` : null,
+    moto ? car.estilo_moto : null,
     car.transmission,
     car.fuel,
     car.color,
@@ -60,6 +64,11 @@ export function CarCard({ car, onEdit, onSold, onDeposit, onCancelRequest, busy 
 
         <span className="absolute left-3 top-3 flex flex-wrap gap-1.5">
           <StatusBadge status={car.status} />
+          {moto && (
+            <span className="inline-flex items-center rounded-full bg-ink-900/80 px-3 py-1 text-xs font-bold text-white backdrop-blur">
+              Moto
+            </span>
+          )}
           {pending && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 ring-1 ring-inset ring-amber-600/30">
               <span className="size-1.5 rounded-full bg-current" />
@@ -120,7 +129,7 @@ export function CarCard({ car, onEdit, onSold, onDeposit, onCancelRequest, busy 
             </p>
             {car.reserva_obs && <p className="mt-1 line-clamp-2 text-amber-800">{car.reserva_obs}</p>}
             <p className="mt-1.5 font-medium text-amber-800">
-              O carro continua à venda. Recebeu o sinal? Toque em <strong>Deu sinal</strong>.
+              {moto ? 'A moto continua' : 'O carro continua'} à venda. Recebeu o sinal? Toque em <strong>Deu sinal</strong>.
             </p>
             <div className="mt-2 flex flex-wrap gap-3">
               {car.reserva_conversa_url && (

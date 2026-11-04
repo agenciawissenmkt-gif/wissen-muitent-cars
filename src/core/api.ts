@@ -168,6 +168,8 @@ export function gerarFichaTecnica(input: {
   model: string
   model_year?: number | string
   version?: string
+  /** 'moto' pede a ficha de moto (cilindrada, estilo, ABS, partida elétrica). */
+  tipo_veiculo?: 'carro' | 'moto'
 }) {
   return request<{
     ficha: Record<string, string | number>

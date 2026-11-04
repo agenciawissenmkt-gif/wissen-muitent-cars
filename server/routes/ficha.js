@@ -46,7 +46,18 @@ export const OPCOES = {
   nivel_consumo: ['Econômico', 'Médio', 'Alto'],
 }
 
+// Moto (migracao 0059): listas proprias. As mesmas do painel (src/core/types.ts).
+export const OPCOES_MOTO = {
+  transmission: ['Manual', 'Automático', 'Semiautomático'],
+  fuel: ['Gasolina', 'Flex', 'Elétrico'],
+  estilo_moto: ['Street', 'Naked', 'Esportiva', 'Trail', 'Big Trail', 'Scooter', 'Motoneta', 'Custom', 'Touring', 'Off Road'],
+  freio_abs: ['Sim', 'Não'],
+  partida_eletrica: ['Sim', 'Não'],
+  nivel_consumo: ['Econômico', 'Médio', 'Alto'],
+}
+
 const lista = (campo, descricao) => ({ type: ['string', 'null'], enum: [...OPCOES[campo], null], description: descricao })
+const listaMoto = (campo, descricao) => ({ type: ['string', 'null'], enum: [...OPCOES_MOTO[campo], null], description: descricao })
 
 // Os campos que a IA pode devolver. Sao exatamente as colunas de `cars`
 // que descrevem o modelo/versao, nao a unidade.
@@ -92,8 +103,52 @@ export const CAMPOS = {
   ),
 }
 
+// Ficha de moto: so o que existe em moto. Portas, porta-malas, tracao e os
+// opcionais de conforto do carro nem sao pedidos.
+export const CAMPOS_MOTO = {
+  cilindrada_cc: { type: ['integer', 'null'], description: 'Cilindrada em cc, numero inteiro, ex: 160' },
+  estilo_moto: listaMoto('estilo_moto', 'Estilo da moto'),
+  engine: { type: ['string', 'null'], description: 'Motor, ex: 160 cc, monocilindrico, 4 tempos, injecao eletronica' },
+  cylinders: { type: ['string', 'null'], description: 'Cilindros, ex: 1 cilindro, 2 cilindros' },
+  horsepower: { type: ['string', 'null'], description: 'Potencia maxima com unidade, ex: 14,9 cv' },
+  torque: { type: ['string', 'null'], description: 'Torque maximo com unidade, ex: 1,4 kgfm' },
+  transmission: listaMoto(
+    'transmission',
+    'Cambio: Manual (com embreagem), Automático (CVT, como nos scooters) ou Semiautomático (troca marcha sem embreagem, como Biz e Pop)',
+  ),
+  fuel: listaMoto('fuel', 'Combustivel'),
+  freio_abs: listaMoto('freio_abs', 'Freio ABS de serie nesta versao (em uma ou nas duas rodas). CBS/freio combinado nao e ABS.'),
+  partida_eletrica: listaMoto('partida_eletrica', 'Partida eletrica de serie nesta versao (mesmo que tambem tenha pedal)'),
+  consumo_cidade: {
+    type: ['number', 'null'],
+    description: 'Consumo na cidade em km/l, numero, ex: 40.5. Dado do fabricante ou de testes da imprensa brasileira. Em moto flex, com gasolina. Em eletrica, null.',
+  },
+  consumo_estrada: {
+    type: ['number', 'null'],
+    description: 'Consumo na estrada em km/l, numero, ex: 45.0. Dado do fabricante ou de testes da imprensa brasileira. Em moto flex, com gasolina. Em eletrica, null.',
+  },
+  nivel_consumo: listaMoto(
+    'nivel_consumo',
+    'Consumo comparado a motos da mesma cilindrada e estilo: Econômico (gasta pouco), Médio ou Alto (gastona).',
+  ),
+}
+
 // Os que o cliente mais pergunta. Se a primeira resposta vier sem algum deles,
 // a IA recebe uma segunda pergunta so sobre o que faltou.
+const ESSENCIAIS_MOTO = [
+  'cilindrada_cc',
+  'estilo_moto',
+  'engine',
+  'horsepower',
+  'torque',
+  'transmission',
+  'fuel',
+  'freio_abs',
+  'partida_eletrica',
+  'consumo_cidade',
+  'consumo_estrada',
+]
+
 const ESSENCIAIS = [
   'engine',
   'horsepower',
@@ -122,13 +177,32 @@ const SINONIMOS = {
   nivel_consumo: { economico: 'Econômico', baixo: 'Econômico', medio: 'Médio', moderado: 'Médio', alto: 'Alto', gastao: 'Alto', elevado: 'Alto' },
 }
 
+const SINONIMOS_MOTO = {
+  transmission: {
+    automatica: 'Automático', automatico: 'Automático', cvt: 'Automático', manual: 'Manual',
+    semiautomatica: 'Semiautomático', 'semi-automatico': 'Semiautomático', 'semi-automatica': 'Semiautomático',
+    'semi automatico': 'Semiautomático', 'semi automatica': 'Semiautomático',
+  },
+  fuel: { eletrica: 'Elétrico', eletrico: 'Elétrico', 'flex fuel': 'Flex', flexone: 'Flex' },
+  estilo_moto: {
+    esportivo: 'Esportiva', sport: 'Esportiva', 'naked bike': 'Naked', cub: 'Motoneta', ciclomotor: 'Motoneta',
+    'off-road': 'Off Road', offroad: 'Off Road', motocross: 'Off Road', enduro: 'Off Road', 'big-trail': 'Big Trail',
+    adventure: 'Big Trail', aventureira: 'Big Trail', cruiser: 'Custom', urbana: 'Street',
+  },
+  freio_abs: { sim: 'Sim', nao: 'Não' },
+  partida_eletrica: { sim: 'Sim', nao: 'Não' },
+  nivel_consumo: SINONIMOS.nivel_consumo,
+}
+
 function semAcento(texto) {
   return String(texto).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim()
 }
 
-export function encaixaNaOpcao(campo, valor) {
-  const opcoes = OPCOES[campo]
+export function encaixaNaOpcao(campo, valor, tipo = 'carro') {
+  const moto = tipo === 'moto'
+  const opcoes = (moto ? OPCOES_MOTO : OPCOES)[campo]
   if (!opcoes) return valor
+  const sinonimosDoCampo = (moto ? SINONIMOS_MOTO : SINONIMOS)[campo] || {}
   const alvo = semAcento(valor)
 
   // 1. igual a uma opcao, ignorando acento e caixa
@@ -136,14 +210,14 @@ export function encaixaNaOpcao(campo, valor) {
   if (exato) return exato
 
   // 2. sinonimo conhecido
-  const sin = (SINONIMOS[campo] || {})[alvo]
+  const sin = sinonimosDoCampo[alvo]
   if (sin) return sin
 
   // 3. "Dianteira (FWD)" -> "Dianteira", "4x4 (AWD)" -> "4x4"
   const semParenteses = alvo.replace(/\s*\(.*\)\s*/, '').trim()
   const porPrefixo = opcoes.find((o) => semAcento(o) === semParenteses)
   if (porPrefixo) return porPrefixo
-  const sinPrefixo = (SINONIMOS[campo] || {})[semParenteses]
+  const sinPrefixo = sinonimosDoCampo[semParenteses]
   if (sinPrefixo) return sinPrefixo
 
   // 4. ultima tentativa: alguma opcao ou palavra conhecida dentro do texto,
@@ -151,7 +225,7 @@ export function encaixaNaOpcao(campo, valor) {
   for (const o of [...opcoes].sort((a, b) => b.length - a.length)) {
     if (alvo.includes(semAcento(o))) return o
   }
-  const sinonimos = Object.entries(SINONIMOS[campo] || {}).sort((a, b) => b[0].length - a[0].length)
+  const sinonimos = Object.entries(sinonimosDoCampo).sort((a, b) => b[0].length - a[0].length)
   for (const [chave, destino] of sinonimos) {
     if (alvo.includes(chave)) return destino
   }
@@ -174,11 +248,37 @@ const virgula = (n) => String(n).replace('.', ',')
  * Confere e padroniza a resposta da IA. So passa chave conhecida, nunca km, cor
  * ou preco, e numero fora do razoavel vira campo vazio (0 a 100 em "0" era o caso).
  */
-export function limpaFicha(ficha) {
+export function limpaFicha(ficha, tipo = 'carro') {
+  const moto = tipo === 'moto'
   const limpa = {}
-  for (const campo of Object.keys(CAMPOS)) {
+  for (const campo of Object.keys(moto ? CAMPOS_MOTO : CAMPOS)) {
     const valor = ficha?.[campo]
     if (valor === null || valor === undefined || valor === '') continue
+
+    // Moto: faixas de moto (uma CG 160 tem 1,4 kgfm e 14,9 cv; carro comeca em 3 kgfm e 30 cv).
+    if (campo === 'cilindrada_cc') {
+      const n = Math.round(numeroDe(valor))
+      if (n >= 30 && n <= 3000) limpa.cilindrada_cc = n
+      continue
+    }
+    if (moto && (campo === 'consumo_cidade' || campo === 'consumo_estrada')) {
+      const n = numeroDe(valor)
+      if (n >= 8 && n <= 90) limpa[campo] = `${virgula(Math.round(n * 10) / 10)} km/l`
+      continue
+    }
+    if (moto && campo === 'horsepower') {
+      const n = numeroDe(valor)
+      if (n >= 3 && n <= 300) limpa.horsepower = `${virgula(Math.round(n * 10) / 10)} cv`
+      continue
+    }
+    if (moto && campo === 'torque') {
+      const n = numeroDe(valor)
+      if (!(n > 0)) continue
+      // Veio em Nm (ex: 13,9 Nm)? Converte para kgfm, que e o padrao da loja.
+      const kgfm = /nm/i.test(String(valor)) || n > 25 ? n / 9.80665 : n
+      if (kgfm >= 0.3 && kgfm <= 25) limpa.torque = `${virgula(Math.round(kgfm * 10) / 10)} kgfm`
+      continue
+    }
 
     if (campo === 'doors') {
       const n = Math.round(numeroDe(valor))
@@ -214,7 +314,7 @@ export function limpaFicha(ficha) {
       continue
     }
 
-    const encaixado = encaixaNaOpcao(campo, String(valor).trim())
+    const encaixado = encaixaNaOpcao(campo, String(valor).trim(), tipo)
     if (encaixado === null || encaixado === '') continue
     limpa[campo] = encaixado
   }
@@ -236,6 +336,31 @@ const INSTRUCOES = [
   '- Hibrido e eletrico: potencia e torque combinados do sistema.',
   '- Consumo (cidade e estrada) em km/l: dado do Inmetro (PBEV) ou da imprensa. Em flex, com gasolina.',
   '  Nivel de consumo: compare com carros da mesma categoria e porte (Econômico, Médio ou Alto).',
+  '- Null so quando voce realmente nao faz ideia. Null e para desconhecimento, nao para duvida pequena.',
+  '',
+  'Formato:',
+  '- Responda SOMENTE o JSON do schema. Nada de texto antes ou depois.',
+  '- Padrao brasileiro: cv para potencia, kgfm para torque.',
+].join('\n')
+
+const INSTRUCOES_MOTO = [
+  'Voce preenche fichas tecnicas de MOTOS para uma loja brasileira de seminovos.',
+  'Receba marca, modelo, versao e ano do modelo e devolva as especificacoes dessa moto no mercado brasileiro.',
+  '',
+  'Como decidir cada campo:',
+  '- Decida pela VERSAO informada: freio ABS, partida eletrica e cambio mudam de versao para versao.',
+  '- Sem versao, use a versao mais vendida daquele ano no Brasil.',
+  '- Preencha TODOS os campos. A pessoa da loja confere antes de salvar, entao o dado oficial',
+  '  ou o valor tipico ajuda; campo vazio so da trabalho para ela.',
+  '- Cilindrada: numero inteiro em cc (ex.: 160 na CG 160, 321 na MT-03).',
+  '- Estilo: Street (urbana, ex.: CG, Fazer FZ15, Factor), Naked (sem carenagem e mais forte, ex.: MT-03, CB 500F),',
+  '  Esportiva (carenada, ex.: R3, Ninja), Trail (uso misto, ex.: Bros, XRE 300, Crosser, Lander),',
+  '  Big Trail (aventureira grande, ex.: BMW GS, Tiger, V-Strom), Scooter (ex.: PCX, NMax, Burgman),',
+  '  Motoneta (ex.: Biz, Pop), Custom (ex.: Shadow, Harley-Davidson), Touring (estradeira com malas, ex.: Gold Wing)',
+  '  ou Off Road (so trilha e competicao, ex.: CRF 250F).',
+  '- Potencia e torque: dado oficial do fabricante. Nunca responda 0.',
+  '- Consumo (cidade e estrada) em km/l: dado do fabricante ou da imprensa. Em moto flex, com gasolina.',
+  '  Nivel de consumo: compare com motos da mesma cilindrada e estilo (Econômico, Médio ou Alto).',
   '- Null so quando voce realmente nao faz ideia. Null e para desconhecimento, nao para duvida pequena.',
   '',
   'Formato:',
@@ -267,8 +392,8 @@ async function registrarConsumo(tenantId, pedidoId, chamadas, agentType = 'ficha
   }
 }
 
-function schemaDe(campos) {
-  const properties = Object.fromEntries(campos.map((c) => [c, CAMPOS[c]]))
+function schemaDe(campos, catalogo = CAMPOS) {
+  const properties = Object.fromEntries(campos.map((c) => [c, catalogo[c]]))
   return { type: 'object', properties, required: campos, additionalProperties: false }
 }
 
@@ -276,12 +401,16 @@ function schemaDe(campos) {
  * Gera a ficha (uma ou duas perguntas a IA) e registra o consumo. Usada pela rota
  * da loja e pela demonstracao do painel (server/routes/demo.js).
  */
-export async function gerarFicha({ brand, model, version, ano }, { tenantId, agentType = 'ficha_tecnica' }) {
+export async function gerarFicha({ brand, model, version, ano, tipo = 'carro' }, { tenantId, agentType = 'ficha_tecnica' }) {
   if (!brand || !model) throw new HttpError(400, 'Informe ao menos marca e modelo.')
   if (!process.env.OPENAI_API_KEY) {
     throw new HttpError(503, 'IA nao configurada.', 'Falta OPENAI_API_KEY nas variaveis de ambiente.')
   }
 
+  // Moto: outro conjunto de campos, outras instrucoes e outras faixas de numero.
+  const moto = tipo === 'moto'
+  const catalogo = moto ? CAMPOS_MOTO : CAMPOS
+  const essenciais = moto ? ESSENCIAIS_MOTO : ESSENCIAIS
   const carro = [brand, model, version, ano ? `ano modelo ${ano}` : null].filter(Boolean).join(' ')
   const controle = new AbortController()
   const inicio = Date.now()
@@ -293,12 +422,12 @@ export async function gerarFicha({ brand, model, version, ano }, { tenantId, age
     const corpoBase = {
       model: MODELO,
       messages: [
-        { role: 'system', content: INSTRUCOES },
-        { role: 'user', content: `Veiculo: ${carro}${pedidoExtra ? `\n\n${pedidoExtra}` : ''}` },
+        { role: 'system', content: moto ? INSTRUCOES_MOTO : INSTRUCOES },
+        { role: 'user', content: `${moto ? 'Moto' : 'Veiculo'}: ${carro}${pedidoExtra ? `\n\n${pedidoExtra}` : ''}` },
       ],
       response_format: {
         type: 'json_schema',
-        json_schema: { name: 'ficha_tecnica', strict: true, schema: schemaDe(campos) },
+        json_schema: { name: moto ? 'ficha_tecnica_moto' : 'ficha_tecnica', strict: true, schema: schemaDe(campos, catalogo) },
       },
     }
     const chamar = (corpo) =>
@@ -341,10 +470,10 @@ export async function gerarFicha({ brand, model, version, ano }, { tenantId, age
 
   let limpa
   try {
-    limpa = limpaFicha(await perguntar(Object.keys(CAMPOS)))
+    limpa = limpaFicha(await perguntar(Object.keys(catalogo)), tipo)
 
     // Segunda volta, so para o que faltou dos essenciais -- se ainda houver tempo.
-    const faltando = ESSENCIAIS.filter((c) => !(c in limpa))
+    const faltando = essenciais.filter((c) => !(c in limpa))
     if (faltando.length && Date.now() - inicio < TIMEOUT_MS * 0.45) {
       try {
         const extra = limpaFicha(
@@ -352,6 +481,7 @@ export async function gerarFicha({ brand, model, version, ano }, { tenantId, age
             faltando,
             'Faltaram estes dados na ficha. Informe o valor oficial do fabricante ou de testes da imprensa para esta versao.',
           ),
+          tipo,
         )
         for (const [campo, valor] of Object.entries(extra)) if (!(campo in limpa)) limpa[campo] = valor
       } catch (erro) {
@@ -371,8 +501,8 @@ export async function gerarFicha({ brand, model, version, ano }, { tenantId, age
   return {
     ficha: limpa,
     preenchidos: Object.keys(limpa).length,
-    total: Object.keys(CAMPOS).length,
-    faltaram: Object.keys(CAMPOS).filter((c) => !(c in limpa)),
+    total: Object.keys(catalogo).length,
+    faltaram: Object.keys(catalogo).filter((c) => !(c in limpa)),
     modelo_usado: MODELO,
   }
 }
@@ -384,7 +514,8 @@ router.post(
 
     const { brand, model, version } = req.body || {}
     const ano = req.body?.model_year || req.body?.year
-    res.json(await gerarFicha({ brand, model, version, ano }, { tenantId: tenant.id }))
+    const tipo = req.body?.tipo_veiculo === 'moto' ? 'moto' : 'carro'
+    res.json(await gerarFicha({ brand, model, version, ano, tipo }, { tenantId: tenant.id }))
   }),
 )
 

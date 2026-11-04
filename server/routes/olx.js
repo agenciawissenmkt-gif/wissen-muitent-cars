@@ -98,7 +98,8 @@ async function sincronizarCarro({ tenantId, conexao, store, carId, forcar = fals
   const jaNaOlx = Boolean(registro && NA_OLX.includes(registro.situacao))
   // Quem decide e a escolha feita ao salvar o carro (olx_publicar). `forcar` fica so por compatibilidade.
   void forcar
-  const deveEstar = Boolean(car) && car.status === 'ativo' && car.olx_publicar !== false
+  // Moto ainda nao vai para a OLX: o anuncio montado aqui e de carro (categoria de carros).
+  const deveEstar = Boolean(car) && car.status === 'ativo' && car.olx_publicar !== false && car.tipo_veiculo !== 'moto'
 
   if (!deveEstar) {
     if (!registro) return { situacao: 'fora' }
@@ -357,7 +358,7 @@ router.post(
     const conexao = await exigeConexao(tenant.id)
 
     const [carros, registros, fotos] = await Promise.all([
-      db.select('cars', `tenant_id=eq.${tenant.id}&status=eq.ativo&olx_publicar=is.true&select=*`),
+      db.select('cars', `tenant_id=eq.${tenant.id}&status=eq.ativo&olx_publicar=is.true&tipo_veiculo=neq.moto&select=*`),
       db.select('olx_anuncios', `tenant_id=eq.${tenant.id}&select=*`),
       db.select('car_photos', `tenant_id=eq.${tenant.id}&select=car_id,url,ordem,is_cover&order=is_cover.desc,ordem.asc`),
     ])

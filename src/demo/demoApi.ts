@@ -68,6 +68,7 @@ export async function demoRequest<T>(caminho: string, init: RequestInit = {}): P
       model: corpo.model,
       version: corpo.version,
       model_year: corpo.model_year,
+      tipo_veiculo: corpo.tipo_veiculo,
     })
   }
 

@@ -149,6 +149,7 @@ const CAMPOS_CARRO = [
   'model_year', 'sunroof', 'carplay_android_auto', 'trunk_liters', 'leather_seats', 'keyless_entry',
   'parking_sensor', 'rear_camera', 'laudo_resultado', 'laudo_empresa', 'laudo_data', 'laudo_obs',
   'laudo_pdf_url', 'consumo_cidade', 'consumo_estrada', 'nivel_consumo',
+  'tipo_veiculo', 'cilindrada_cc', 'estilo_moto', 'freio_abs', 'partida_eletrica',
 ]
 
 let copiaEmCache = null
@@ -210,8 +211,9 @@ router.post(
     const anoBruto = Number(req.body?.model_year || req.body?.year)
     const ano = anoBruto >= 1900 && anoBruto <= 2100 ? anoBruto : undefined
     if (!brand || !model) throw new HttpError(400, 'Informe ao menos marca e modelo.')
+    const tipo = req.body?.tipo_veiculo === 'moto' ? 'moto' : 'carro'
     await liberarIa(req, 'ficha')
-    res.json(await gerarFicha({ brand, model, version, ano }, { tenantId: LOJA_MODELO, agentType: 'demo_ficha' }))
+    res.json(await gerarFicha({ brand, model, version, ano, tipo }, { tenantId: LOJA_MODELO, agentType: 'demo_ficha' }))
   }),
 )
 
