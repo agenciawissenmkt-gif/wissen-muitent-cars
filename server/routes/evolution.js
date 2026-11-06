@@ -405,6 +405,13 @@ router.post(
           nameInbox: inboxName,
           importContacts: false,
           importMessages: false,
+          // Com a integração do Chatwoot ligada, a Evolution só guarda o histórico
+          // que o celular manda no pareamento se este limite estiver preenchido
+          // (vazio = ela descarta tudo). Sem histórico a trava "Contato ja era do
+          // dono?" do n8n fica cega e a Julia trata todo contato como novo.
+          // importMessages continua false: o histórico fica só na Evolution, não
+          // vai para o Chatwoot nem dispara a Julia.
+          daysLimitImportMessages: 30,
           mergeBrazilContacts: true,
           autoCreate: true,
         },
