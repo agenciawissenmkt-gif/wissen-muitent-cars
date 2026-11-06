@@ -372,6 +372,14 @@ router.post(
           // passa a ter em que se apoiar. Ver "Contato ja era do dono?" no
           // fluxo do n8n.
           syncFullHistory: true,
+
+          // Grupos fora do Chatwoot e do agente desde o primeiro minuto. Com o
+          // syncFullHistory ligado a Evolution 2.4.0-rc2 ainda decifra as
+          // mensagens de grupo; no numero da JC Car (11/2026) mensagens de grupo
+          // que nao decifravam travaram a fila do WhatsApp por 2 dias. O fluxo
+          // "Padroniza o Chatwoot da loja" desliga o syncFullHistory na primeira
+          // passada depois que a loja conecta, e ai os grupos saem de vez.
+          groupsIgnore: true,
         },
       })
     } catch (error) {
